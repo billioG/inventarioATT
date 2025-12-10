@@ -3,15 +3,23 @@ class SupabaseClient {
   constructor() {
     // REEMPLAZA ESTOS VALORES CON TUS CREDENCIALES DE SUPABASE
     this.supabaseUrl = 'https://pfshuqbqoqunockrphnm.supabase.co';
-    this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmc2h1cWJxb3F1bm9ja3JwaG5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMjkwODksImV4cCI6MjA4MDkwNTA4OX0.lQW62ETddyyPQLbOHEJ7w6wUZ8qoNvX97gqjV-4GgCQ';
+    this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmc2h1cWJxb3F1bm9ja3JwaG5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzM3OTc1NzgsImV4cCI6MjA0OTM3MzU3OH0.lQs-vf3YK8zLqDqfZUYmYDJrNqoQV5iEQNmwS2GXZo4';
     
     this.client = null;
     this.currentUser = null;
+    this.isInitialized = false;
   }
 
   // Initialize Supabase client
   init() {
     try {
+      // Verificar si la librería de Supabase está cargada
+      if (typeof supabase === 'undefined') {
+        console.warn('Supabase library not loaded, app will work in offline-only mode');
+        this.isInitialized = false;
+        return null;
+      }
+
       this.client = supabase.createClient(this.supabaseUrl, this.supabaseKey, {
         auth: {
           persistSession: true,
@@ -26,21 +34,32 @@ class SupabaseClient {
         }
       });
 
+      this.isInitialized = true;
       console.log('Supabase client initialized');
       return this.client;
     } catch (error) {
       console.error('Error initializing Supabase:', error);
-      throw error;
+      this.isInitialized = false;
+      return null;
     }
+  }
+
+  // Check if Supabase is available
+  isAvailable() {
+    return this.isInitialized && this.client !== null;
   }
 
   // Check if online
   isOnline() {
-    return navigator.onLine;
+    return navigator.onLine && this.isAvailable();
   }
 
   // Auth methods
   async signIn(email, password) {
+    if (!this.isAvailable()) {
+      throw new Error('No se puede iniciar sesión sin conexión a internet');
+    }
+
     try {
       const { data, error } = await this.client.auth.signInWithPassword({
         email,
@@ -65,6 +84,10 @@ class SupabaseClient {
   }
 
   async signUp(email, password, userData) {
+    if (!this.isAvailable()) {
+      throw new Error('No se puede registrar sin conexión a internet');
+    }
+
     try {
       const { data, error } = await this.client.auth.signUp({
         email,
@@ -93,13 +116,20 @@ class SupabaseClient {
   }
 
   async signOut() {
+    if (!this.isAvailable()) {
+      // Logout offline
+      this.currentUser = null;
+      await dbManager.clear('profile');
+      return true;
+    }
+
     try {
       const { error } = await this.client.auth.signOut();
       if (error) throw error;
 
       this.currentUser = null;
       
-      // Clear IndexedDB (except sync queue)
+      // Clear IndexedDB
       await dbManager.clear('profile');
       
       return true;
@@ -110,6 +140,10 @@ class SupabaseClient {
   }
 
   async getCurrentUser() {
+    if (!this.isAvailable()) {
+      return null;
+    }
+
     try {
       const { data: { user } } = await this.client.auth.getUser();
       this.currentUser = user;
@@ -121,6 +155,10 @@ class SupabaseClient {
   }
 
   async getCurrentSession() {
+    if (!this.isAvailable()) {
+      return null;
+    }
+
     try {
       const { data: { session } } = await this.client.auth.getSession();
       return session;
@@ -132,6 +170,10 @@ class SupabaseClient {
 
   // Profile methods
   async getProfile(userId) {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase no disponible');
+    }
+
     try {
       const { data, error } = await this.client
         .from('profiles')
@@ -148,6 +190,10 @@ class SupabaseClient {
   }
 
   async createProfile(profileData) {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase no disponible');
+    }
+
     try {
       const { data, error } = await this.client
         .from('profiles')
@@ -164,6 +210,10 @@ class SupabaseClient {
   }
 
   async updateProfile(userId, updates) {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase no disponible');
+    }
+
     try {
       const { data, error } = await this.client
         .from('profiles')
@@ -182,6 +232,10 @@ class SupabaseClient {
 
   // Tablet CRUD operations
   async getTablets(filters = {}) {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase no disponible');
+    }
+
     try {
       let query = this.client
         .from('tablets')
@@ -214,6 +268,10 @@ class SupabaseClient {
   }
 
   async getTablet(id) {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase no disponible');
+    }
+
     try {
       const { data, error } = await this.client
         .from('tablets')
@@ -234,6 +292,10 @@ class SupabaseClient {
   }
 
   async createTablet(tabletData) {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase no disponible');
+    }
+
     try {
       const { data, error } = await this.client
         .from('tablets')
@@ -254,6 +316,10 @@ class SupabaseClient {
   }
 
   async updateTablet(id, updates) {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase no disponible');
+    }
+
     try {
       const { data, error } = await this.client
         .from('tablets')
@@ -271,6 +337,10 @@ class SupabaseClient {
   }
 
   async deleteTablet(id) {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase no disponible');
+    }
+
     try {
       const { error } = await this.client
         .from('tablets')
@@ -285,61 +355,13 @@ class SupabaseClient {
     }
   }
 
-  // Storage operations
-  async uploadImage(file, path) {
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `${path}/${fileName}`;
-
-      const { data, error } = await this.client.storage
-        .from('tablet-images')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (error) throw error;
-
-      // Get public URL
-      const { data: urlData } = this.client.storage
-        .from('tablet-images')
-        .getPublicUrl(filePath);
-
-      return {
-        path: filePath,
-        url: urlData.publicUrl
-      };
-    } catch (error) {
-      console.error('Upload image error:', error);
-      throw error;
-    }
-  }
-
-  async deleteImage(path) {
-    try {
-      const { error } = await this.client.storage
-        .from('tablet-images')
-        .remove([path]);
-
-      if (error) throw error;
-      return true;
-    } catch (error) {
-      console.error('Delete image error:', error);
-      throw error;
-    }
-  }
-
-  getImageUrl(path) {
-    const { data } = this.client.storage
-      .from('tablet-images')
-      .getPublicUrl(path);
-    
-    return data.publicUrl;
-  }
-
   // Realtime subscriptions
   subscribeToTablets(callback) {
+    if (!this.isAvailable()) {
+      console.warn('Realtime subscriptions not available offline');
+      return null;
+    }
+
     return this.client
       .channel('tablets-changes')
       .on(
@@ -355,7 +377,7 @@ class SupabaseClient {
   }
 
   unsubscribe(subscription) {
-    if (subscription) {
+    if (subscription && this.isAvailable()) {
       this.client.removeChannel(subscription);
     }
   }
@@ -363,4 +385,3 @@ class SupabaseClient {
 
 // Export singleton
 const supabaseClient = new SupabaseClient();
-
