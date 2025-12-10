@@ -3,20 +3,18 @@ const RUNTIME_CACHE = 'runtime-cache-v1';
 
 // Assets to cache on install
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/css/styles.css',
-  '/js/app.js',
-  '/js/db.js',
-  '/js/supabase-client.js',
-  '/js/auth.js',
-  '/js/ocr.js',
-  '/js/camera.js',
-  '/js/sync.js',
-  '/js/export.js',
-  '/manifest.json',
-  '/assets/icons/icon-192.png',
-  '/assets/icons/icon-512.png'
+  '/inventarioATT/',
+  '/inventarioATT/index.html',
+  '/inventarioATT/css/styles.css',
+  '/inventarioATT/js/app.js',
+  '/inventarioATT/js/db.js',
+  '/inventarioATT/js/supabase-client.js',
+  '/inventarioATT/js/auth.js',
+  '/inventarioATT/js/ocr.js',
+  '/inventarioATT/js/camera.js',
+  '/inventarioATT/js/sync.js',
+  '/inventarioATT/js/export.js',
+  '/inventarioATT/manifest.json'
 ];
 
 // Install event - cache static assets
@@ -26,7 +24,9 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log('[SW] Caching static assets');
-        return cache.addAll(STATIC_ASSETS);
+        return cache.addAll(STATIC_ASSETS).catch(err => {
+          console.error('[SW] Cache addAll failed:', err);
+        });
       })
       .then(() => self.skipWaiting())
   );
@@ -61,12 +61,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Skip Supabase API calls (handle them separately)
+  // Skip Supabase API calls
   if (url.origin.includes('supabase')) {
     event.respondWith(
       fetch(request)
         .catch(() => {
-          // Return offline response for API calls
           return new Response(
             JSON.stringify({ error: 'offline', message: 'No network connection' }),
             { 
@@ -79,12 +78,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Skip external CDN resources (always try network first)
+  // Skip external CDN resources
   if (!url.origin.includes(self.location.origin)) {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          // Cache CDN resources for offline use
           const clonedResponse = response.clone();
           caches.open(RUNTIME_CACHE).then((cache) => {
             cache.put(request, clonedResponse);
@@ -103,24 +101,11 @@ self.addEventListener('fetch', (event) => {
     caches.match(request)
       .then((cachedResponse) => {
         if (cachedResponse) {
-          // Return cached version and update in background
-          fetch(request)
-            .then((networkResponse) => {
-              if (networkResponse && networkResponse.status === 200) {
-                caches.open(CACHE_NAME).then((cache) => {
-                  cache.put(request, networkResponse);
-                });
-              }
-            })
-            .catch(() => {});
-          
           return cachedResponse;
         }
 
-        // Not in cache, try network
         return fetch(request)
           .then((response) => {
-            // Don't cache non-successful responses
             if (!response || response.status !== 200) {
               return response;
             }
@@ -134,9 +119,8 @@ self.addEventListener('fetch', (event) => {
             return response;
           })
           .catch(() => {
-            // Network failed, return offline page
             if (request.destination === 'document') {
-              return caches.match('/index.html');
+              return caches.match('/inventarioATT/index.html');
             }
           });
       })
@@ -155,7 +139,6 @@ self.addEventListener('sync', (event) => {
 // Sync function
 async function syncData() {
   try {
-    // Send message to all clients to start sync
     const clients = await self.clients.matchAll();
     clients.forEach((client) => {
       client.postMessage({
@@ -167,45 +150,6 @@ async function syncData() {
     console.error('[SW] Background sync failed:', error);
   }
 }
-
-// Handle push notifications (optional for future use)
-self.addEventListener('push', (event) => {
-  if (!event.data) return;
-
-  const data = event.data.json();
-  const options = {
-    body: data.body || 'Nueva actualización disponible',
-    icon: '/assets/icons/icon-192.png',
-    badge: '/assets/icons/icon-72.png',
-    vibrate: [200, 100, 200],
-    data: data.data || {}
-  };
-
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'Inventario Tablets', options)
-  );
-});
-
-// Handle notification clicks
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true })
-      .then((clientList) => {
-        // If app is already open, focus it
-        for (let client of clientList) {
-          if (client.url === '/' && 'focus' in client) {
-            return client.focus();
-          }
-        }
-        // Otherwise open new window
-        if (clients.openWindow) {
-          return clients.openWindow('/');
-        }
-      })
-  );
-});
 
 // Handle messages from app
 self.addEventListener('message', (event) => {
@@ -222,4 +166,3 @@ self.addEventListener('message', (event) => {
     );
   }
 });
-
