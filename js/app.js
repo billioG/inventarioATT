@@ -748,7 +748,21 @@ class TabletInventoryApp {
       } else {
         // Create new tablet
         tabletData.id = this.generateUUID();
-        await dbManager.saveTablet(tabletData);
+        
+        // Verificar si ya existe localmente antes de guardar
+        const existingLocal = await dbManager.searchTablets(tabletData.codigo_unico);
+        if (existingLocal.length > 0) {
+          const useExisting = confirm('Ya existe una tablet con este código. ¿Deseas actualizarla?');
+          if (useExisting) {
+            tabletData.id = existingLocal[0].id;
+            await dbManager.saveTablet(tabletData);
+          } else {
+            showToast('Operación cancelada', 'info');
+            return;
+          }
+        } else {
+          await dbManager.saveTablet(tabletData);
+        }
 
         // If online, create on server
         if (navigator.onLine) {
@@ -761,7 +775,34 @@ class TabletInventoryApp {
             await dbManager.saveTablet(tabletData);
           } catch (error) {
             console.error('Error creating on server:', error);
-            await dbManager.addToSyncQueue('INSERT', 'tablets', tabletData.id, tabletData);
+            
+            // Si es duplicado, intentar encontrar y actualizar
+            if (error.code === '23505') {
+              console.log('Duplicate detected, searching for existing tablet...');
+              try {
+                const tablets = await supabaseClient.getTablets({ search: tabletData.codigo_unico });
+                const existing = tablets.find(t => 
+                  t.codigo_unico === tabletData.codigo_unico || 
+                  t.numero_serie === tabletData.numero_serie
+                );
+                
+                if (existing) {
+                  await supabaseClient.updateTablet(existing.id, tabletData);
+                  tabletData.id = existing.id;
+                  tabletData.synced = true;
+                  tabletData.last_synced_at = new Date().toISOString();
+                  await dbManager.saveTablet(tabletData);
+                  showToast('Tablet existente actualizada', 'info');
+                } else {
+                  await dbManager.addToSyncQueue('INSERT', 'tablets', tabletData.id, tabletData);
+                }
+              } catch (retryError) {
+                console.error('Error recovering from duplicate:', retryError);
+                await dbManager.addToSyncQueue('INSERT', 'tablets', tabletData.id, tabletData);
+              }
+            } else {
+              await dbManager.addToSyncQueue('INSERT', 'tablets', tabletData.id, tabletData);
+            }
           }
         } else {
           // Add to sync queue
@@ -782,6 +823,7 @@ class TabletInventoryApp {
       showToast('Error al guardar tablet: ' + error.message, 'error');
     }
   }
+
 
   // Start camera
   async startCamera() {
