@@ -23,13 +23,13 @@ class SyncManager {
 
     // Setup periodic sync (every 5 minutes)
     this.syncInterval = setInterval(() => {
-      if (navigator.onLine && !this.isSyncing) {
+      if (navigator.onLine && !this.isSyncing && supabaseClient.isAvailable()) {
         this.syncAll();
       }
     }, 5 * 60 * 1000);
 
     // Setup realtime subscription if online
-    if (navigator.onLine) {
+    if (navigator.onLine && supabaseClient.isAvailable()) {
       this.setupRealtimeSync();
     }
 
@@ -42,13 +42,17 @@ class SyncManager {
     console.log('Connection restored - going online');
     this.hideOfflineIndicator();
     
-    // Sync after a short delay
-    setTimeout(() => {
-      this.syncAll();
-    }, 1000);
+    // Sync after a short delay (solo si Supabase está disponible)
+    if (supabaseClient.isAvailable()) {
+      setTimeout(() => {
+        this.syncAll();
+      }, 1000);
 
-    // Setup realtime sync
-    this.setupRealtimeSync();
+      // Setup realtime sync
+      this.setupRealtimeSync();
+    } else {
+      console.log('Supabase not available, working in offline mode');
+    }
   }
 
   // Handle offline event
@@ -81,7 +85,10 @@ class SyncManager {
 
   // Setup realtime synchronization
   setupRealtimeSync() {
-    if (!navigator.onLine) return;
+    if (!navigator.onLine || !supabaseClient.isAvailable()) {
+      console.log('Cannot setup realtime sync: offline or Supabase not available');
+      return;
+    }
 
     try {
       this.realtimeSubscription = supabaseClient.subscribeToTablets((payload) => {
@@ -127,7 +134,12 @@ class SyncManager {
 
   // Sync all data - BIDIRECCIONAL
   async syncAll() {
-    if (this.isSyncing || !navigator.onLine) {
+    if (this.isSyncing || !navigator.onLine || !supabaseClient.isAvailable()) {
+      if (!navigator.onLine) {
+        console.log('Cannot sync: offline');
+      } else if (!supabaseClient.isAvailable()) {
+        console.log('Cannot sync: Supabase not available');
+      }
       return;
     }
 
@@ -161,6 +173,11 @@ class SyncManager {
 
   // PASO 1: Sincronizar cambios locales al servidor
   async syncLocalToServer() {
+    if (!supabaseClient.isAvailable()) {
+      console.log('Skipping local to server sync: Supabase not available');
+      return;
+    }
+
     try {
       const unsyncedTablets = await dbManager.getUnsyncedTablets();
       
@@ -189,6 +206,10 @@ class SyncManager {
 
   // Sincronizar una tablet individual al servidor
   async syncTabletToServer(tablet) {
+    if (!supabaseClient.isAvailable()) {
+      throw new Error('Supabase not available');
+    }
+
     try {
       // Buscar si existe en el servidor
       const existing = await this.findTabletOnServer(tablet);
@@ -249,6 +270,11 @@ class SyncManager {
 
   // PASO 2: Sincronizar cambios del servidor a local
   async syncServerToLocal() {
+    if (!supabaseClient.isAvailable()) {
+      console.log('Skipping server to local sync: Supabase not available');
+      return;
+    }
+
     try {
       console.log('Fetching tablets from server...');
       const serverTablets = await supabaseClient.getTablets();
@@ -327,6 +353,11 @@ class SyncManager {
 
   // PASO 3: Procesar cola de sincronización
   async processSyncQueue() {
+    if (!supabaseClient.isAvailable()) {
+      console.log('Skipping sync queue: Supabase not available');
+      return;
+    }
+
     try {
       const queueItems = await dbManager.getUnsyncedQueue();
 
@@ -369,6 +400,10 @@ class SyncManager {
 
   // Procesar un item individual de la cola
   async processSyncQueueItem(item) {
+    if (!supabaseClient.isAvailable()) {
+      throw new Error('Supabase not available');
+    }
+
     const { operation, table_name, record_id, data } = item;
 
     try {
@@ -417,6 +452,11 @@ class SyncManager {
 
   // PASO 4: Resolver conflictos
   async resolveConflicts() {
+    if (!supabaseClient.isAvailable()) {
+      console.log('Skipping conflict resolution: Supabase not available');
+      return;
+    }
+
     try {
       console.log('Checking for conflicts...');
       
@@ -473,6 +513,10 @@ class SyncManager {
 
   // Buscar tablet en el servidor por múltiples criterios
   async findTabletOnServer(tablet) {
+    if (!supabaseClient.isAvailable()) {
+      return null;
+    }
+
     try {
       // Buscar por ID si existe
       if (tablet.id) {
@@ -509,6 +553,11 @@ class SyncManager {
   async manualSync() {
     if (!navigator.onLine) {
       showToast('No hay conexión a internet', 'warning');
+      return;
+    }
+
+    if (!supabaseClient.isAvailable()) {
+      showToast('Supabase no está disponible. Recarga la página.', 'warning');
       return;
     }
 
