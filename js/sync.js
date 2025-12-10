@@ -125,26 +125,29 @@ class SyncManager {
     }
   }
 
-  // Sync all data
+  // Sync all data - BIDIRECCIONAL
   async syncAll() {
     if (this.isSyncing || !navigator.onLine) {
       return;
     }
 
     this.isSyncing = true;
-    console.log('Starting full sync...');
+    console.log('Starting full bidirectional sync...');
 
     try {
-      // Sync tablets to server
-      await this.syncTabletsToServer();
+      // PASO 1: Sincronizar cambios locales al servidor (Local -> Server)
+      await this.syncLocalToServer();
 
-      // Sync tablets from server
-      await this.syncTabletsFromServer();
+      // PASO 2: Sincronizar cambios del servidor a local (Server -> Local)
+      await this.syncServerToLocal();
 
-      // Process sync queue
+      // PASO 3: Procesar cola de sincronización pendiente
       await this.processSyncQueue();
 
-      console.log('Full sync completed successfully');
+      // PASO 4: Resolver conflictos si existen
+      await this.resolveConflicts();
+
+      console.log('Full bidirectional sync completed successfully');
       showToast('Sincronización completada', 'success');
 
     } catch (error) {
@@ -156,141 +159,173 @@ class SyncManager {
     }
   }
 
-  // Sync unsynced tablets to server - CORREGIDO CON MANEJO DE DUPLICADOS
-  async syncTabletsToServer() {
+  // PASO 1: Sincronizar cambios locales al servidor
+  async syncLocalToServer() {
     try {
       const unsyncedTablets = await dbManager.getUnsyncedTablets();
       
       if (unsyncedTablets.length === 0) {
-        console.log('No unsynced tablets to upload');
+        console.log('No local changes to sync to server');
         return;
       }
 
-      console.log(`Syncing ${unsyncedTablets.length} tablets to server...`);
+      console.log(`Syncing ${unsyncedTablets.length} local tablets to server...`);
 
       for (const tablet of unsyncedTablets) {
         try {
-          let serverTablet;
-
-          // Check if tablet exists on server (by codigo_unico o numero_serie)
-          const existing = await this.checkTabletExistsByMultipleFields(tablet);
-
-          if (existing) {
-            console.log(`Tablet ${tablet.codigo_unico} already exists on server, updating...`);
-            // Update existing
-            serverTablet = await supabaseClient.updateTablet(existing.id, tablet);
-          } else {
-            // Create new - remover campos que no deben enviarse
-            const { id, synced, last_synced_at, ...tabletData } = tablet;
-            serverTablet = await supabaseClient.createTablet(tabletData);
-          }
-
-          // Actualizar local con ID del servidor y marcar como sincronizado
-          const updatedTablet = {
-            ...tablet,
-            id: serverTablet.id,
-            synced: true,
-            last_synced_at: new Date().toISOString()
-          };
-          
-          await dbManager.saveTablet(updatedTablet);
-
-          console.log(`Tablet ${tablet.codigo_unico} synced successfully`);
-
+          await this.syncTabletToServer(tablet);
         } catch (error) {
           console.error(`Error syncing tablet ${tablet.codigo_unico}:`, error);
-          
-          // Si es error de duplicado, buscar y actualizar
-          if (error.code === '23505') {
-            console.log(`Duplicate detected for ${tablet.codigo_unico}, attempting to find and update...`);
-            try {
-              const existing = await this.checkTabletExistsByMultipleFields(tablet);
-              if (existing) {
-                const serverTablet = await supabaseClient.updateTablet(existing.id, tablet);
-                const updatedTablet = {
-                  ...tablet,
-                  id: serverTablet.id,
-                  synced: true,
-                  last_synced_at: new Date().toISOString()
-                };
-                await dbManager.saveTablet(updatedTablet);
-                console.log(`Tablet ${tablet.codigo_unico} updated after duplicate detection`);
-              }
-            } catch (retryError) {
-              console.error(`Failed to recover from duplicate:`, retryError);
-            }
-          }
         }
       }
 
+      console.log('Local to server sync completed');
+
     } catch (error) {
-      console.error('Error syncing tablets to server:', error);
+      console.error('Error in local to server sync:', error);
       throw error;
     }
   }
 
-  // Check if tablet exists on server by multiple fields - NUEVO
-  async checkTabletExistsByMultipleFields(tablet) {
+  // Sincronizar una tablet individual al servidor
+  async syncTabletToServer(tablet) {
     try {
-      // Buscar por código único primero
-      let tablets = await supabaseClient.getTablets({ search: tablet.codigo_unico });
-      let found = tablets.find(t => t.codigo_unico === tablet.codigo_unico);
-      
-      if (found) return found;
+      // Buscar si existe en el servidor
+      const existing = await this.findTabletOnServer(tablet);
 
-      // Si no se encuentra, buscar por número de serie
-      if (tablet.numero_serie) {
-        tablets = await supabaseClient.getTablets({ search: tablet.numero_serie });
-        found = tablets.find(t => t.numero_serie === tablet.numero_serie);
+      let serverTablet;
+
+      if (existing) {
+        // Ya existe - comparar timestamps y actualizar si es necesario
+        const localDate = new Date(tablet.updated_at || tablet.created_at);
+        const serverDate = new Date(existing.updated_at || existing.created_at);
+
+        if (localDate > serverDate) {
+          console.log(`Local version is newer for ${tablet.codigo_unico}, updating server...`);
+          serverTablet = await supabaseClient.updateTablet(existing.id, tablet);
+        } else {
+          console.log(`Server version is current for ${tablet.codigo_unico}, marking as synced...`);
+          serverTablet = existing;
+        }
+      } else {
+        // No existe - crear nuevo
+        console.log(`Creating new tablet ${tablet.codigo_unico} on server...`);
+        const { id, synced, last_synced_at, ...tabletData } = tablet;
+        serverTablet = await supabaseClient.createTablet(tabletData);
       }
+
+      // Actualizar local con ID del servidor y marcar como sincronizado
+      const updatedTablet = {
+        ...tablet,
+        id: serverTablet.id,
+        synced: true,
+        last_synced_at: new Date().toISOString()
+      };
       
-      return found || null;
+      await dbManager.saveTablet(updatedTablet);
+      console.log(`Tablet ${tablet.codigo_unico} synced to server successfully`);
+
     } catch (error) {
-      console.error('Error checking tablet existence:', error);
-      return null;
+      // Manejo especial de duplicados
+      if (error.code === '23505') {
+        console.log(`Duplicate key error for ${tablet.codigo_unico}, attempting recovery...`);
+        const existing = await this.findTabletOnServer(tablet);
+        if (existing) {
+          await supabaseClient.updateTablet(existing.id, tablet);
+          const updatedTablet = {
+            ...tablet,
+            id: existing.id,
+            synced: true,
+            last_synced_at: new Date().toISOString()
+          };
+          await dbManager.saveTablet(updatedTablet);
+          console.log(`Recovered from duplicate error for ${tablet.codigo_unico}`);
+        }
+      } else {
+        throw error;
+      }
     }
   }
 
-  // Check if tablet exists on server - MANTENER POR COMPATIBILIDAD
-  async checkTabletExists(codigoUnico) {
-    return this.checkTabletExistsByMultipleFields({ codigo_unico: codigoUnico });
-  }
-
-  // Sync tablets from server
-  async syncTabletsFromServer() {
+  // PASO 2: Sincronizar cambios del servidor a local
+  async syncServerToLocal() {
     try {
       console.log('Fetching tablets from server...');
-
       const serverTablets = await supabaseClient.getTablets();
       console.log(`Received ${serverTablets.length} tablets from server`);
 
       for (const serverTablet of serverTablets) {
-        const localTablet = await dbManager.getTablet(serverTablet.id);
-
-        if (!localTablet) {
-          // New tablet from server
-          await dbManager.saveTablet({ ...serverTablet, synced: true });
-        } else {
-          // Check if server version is newer
-          const serverDate = new Date(serverTablet.updated_at || serverTablet.created_at);
-          const localDate = new Date(localTablet.updated_at || localTablet.created_at);
-
-          if (serverDate > localDate) {
-            // Server version is newer, update local
-            await dbManager.saveTablet({ ...serverTablet, synced: true });
-          }
+        try {
+          await this.syncTabletToLocal(serverTablet);
+        } catch (error) {
+          console.error(`Error syncing tablet ${serverTablet.codigo_unico} to local:`, error);
         }
       }
 
-      console.log('Tablets synced from server successfully');
+      // Detectar tablets eliminadas en el servidor
+      await this.detectDeletedTablets(serverTablets);
+
+      console.log('Server to local sync completed');
 
     } catch (error) {
-      console.error('Error syncing tablets from server:', error);
+      console.error('Error in server to local sync:', error);
       throw error;
     }
   }
 
-  // Process sync queue
+  // Sincronizar una tablet del servidor a local
+  async syncTabletToLocal(serverTablet) {
+    try {
+      const localTablet = await dbManager.getTablet(serverTablet.id);
+
+      if (!localTablet) {
+        // No existe localmente - crear
+        console.log(`Adding new tablet ${serverTablet.codigo_unico} from server to local`);
+        await dbManager.saveTablet({ ...serverTablet, synced: true });
+      } else {
+        // Existe - comparar timestamps
+        const serverDate = new Date(serverTablet.updated_at || serverTablet.created_at);
+        const localDate = new Date(localTablet.updated_at || localTablet.created_at);
+
+        if (serverDate > localDate) {
+          // Servidor tiene versión más reciente
+          console.log(`Server version is newer for ${serverTablet.codigo_unico}, updating local...`);
+          await dbManager.saveTablet({ ...serverTablet, synced: true });
+        } else if (serverDate < localDate && !localTablet.synced) {
+          // Local tiene versión más reciente y no está sincronizado
+          // Se sincronizará en el siguiente ciclo local -> server
+          console.log(`Local has newer unsynced changes for ${serverTablet.codigo_unico}, keeping local`);
+        } else {
+          // Están sincronizados
+          console.log(`Tablet ${serverTablet.codigo_unico} is in sync`);
+          await dbManager.saveTablet({ ...serverTablet, synced: true });
+        }
+      }
+    } catch (error) {
+      console.error(`Error syncing tablet ${serverTablet.codigo_unico} to local:`, error);
+      throw error;
+    }
+  }
+
+  // Detectar tablets eliminadas en el servidor
+  async detectDeletedTablets(serverTablets) {
+    try {
+      const localTablets = await dbManager.getAllTablets();
+      const serverIds = new Set(serverTablets.map(t => t.id));
+
+      for (const localTablet of localTablets) {
+        // Si la tablet local está sincronizada pero no existe en el servidor, fue eliminada
+        if (localTablet.synced && !serverIds.has(localTablet.id)) {
+          console.log(`Tablet ${localTablet.codigo_unico} was deleted on server, removing from local`);
+          await dbManager.deleteTablet(localTablet.id);
+        }
+      }
+    } catch (error) {
+      console.error('Error detecting deleted tablets:', error);
+    }
+  }
+
+  // PASO 3: Procesar cola de sincronización
   async processSyncQueue() {
     try {
       const queueItems = await dbManager.getUnsyncedQueue();
@@ -309,13 +344,17 @@ class SyncManager {
         } catch (error) {
           console.error(`Error processing queue item ${item.id}:`, error);
           
-          // Increment retry count
-          item.retries = (item.retries || 0) + 1;
-          
-          // Remove from queue if max retries reached
-          if (item.retries >= 3) {
-            console.log(`Max retries reached for queue item ${item.id}, removing...`);
-            await dbManager.removeFromSyncQueue(item.id);
+          // Incrementar contador de reintentos
+          const updatedItem = await dbManager.get('syncQueue', item.id);
+          if (updatedItem) {
+            updatedItem.retries = (updatedItem.retries || 0) + 1;
+            
+            if (updatedItem.retries >= 3) {
+              console.log(`Max retries reached for queue item ${item.id}, removing...`);
+              await dbManager.removeFromSyncQueue(item.id);
+            } else {
+              await dbManager.put('syncQueue', updatedItem);
+            }
           }
         }
       }
@@ -328,25 +367,29 @@ class SyncManager {
     }
   }
 
-  // Process individual sync queue item - CORREGIDO CON MANEJO DE DUPLICADOS
+  // Procesar un item individual de la cola
   async processSyncQueueItem(item) {
     const { operation, table_name, record_id, data } = item;
 
     try {
       switch (operation) {
         case 'INSERT':
-          // Verificar si ya existe antes de insertar
-          const existing = await this.checkTabletExistsByMultipleFields(data);
+          const existing = await this.findTabletOnServer(data);
           if (existing) {
             console.log(`Tablet already exists, updating instead of inserting`);
             await supabaseClient.updateTablet(existing.id, data);
+            // Actualizar local con el ID correcto
+            await dbManager.saveTablet({ ...data, id: existing.id, synced: true });
           } else {
-            await supabaseClient.createTablet(data);
+            const created = await supabaseClient.createTablet(data);
+            // Actualizar local con el ID del servidor
+            await dbManager.saveTablet({ ...data, id: created.id, synced: true });
           }
           break;
 
         case 'UPDATE':
           await supabaseClient.updateTablet(record_id, data);
+          await dbManager.saveTablet({ ...data, id: record_id, synced: true });
           break;
 
         case 'DELETE':
@@ -357,18 +400,108 @@ class SyncManager {
           console.warn(`Unknown operation: ${operation}`);
       }
     } catch (error) {
-      // Si es error de duplicado en INSERT, intentar UPDATE
       if (error.code === '23505' && operation === 'INSERT') {
         console.log(`Duplicate key error, attempting update...`);
-        const existing = await this.checkTabletExistsByMultipleFields(data);
+        const existing = await this.findTabletOnServer(data);
         if (existing) {
           await supabaseClient.updateTablet(existing.id, data);
+          await dbManager.saveTablet({ ...data, id: existing.id, synced: true });
         } else {
-          throw error; // Re-lanzar si no se puede recuperar
+          throw error;
         }
       } else {
-        throw error; // Re-lanzar otros errores
+        throw error;
       }
+    }
+  }
+
+  // PASO 4: Resolver conflictos
+  async resolveConflicts() {
+    try {
+      console.log('Checking for conflicts...');
+      
+      const localTablets = await dbManager.getAllTablets();
+      const conflicts = [];
+
+      for (const localTablet of localTablets) {
+        if (!localTablet.synced) {
+          // Buscar en servidor
+          const serverTablet = await this.findTabletOnServer(localTablet);
+          
+          if (serverTablet) {
+            const localDate = new Date(localTablet.updated_at || localTablet.created_at);
+            const serverDate = new Date(serverTablet.updated_at || serverTablet.created_at);
+
+            // Si ambos tienen cambios recientes, hay conflicto
+            if (Math.abs(serverDate - localDate) < 60000) { // Menos de 1 minuto de diferencia
+              conflicts.push({
+                local: localTablet,
+                server: serverTablet
+              });
+            }
+          }
+        }
+      }
+
+      if (conflicts.length > 0) {
+        console.log(`Found ${conflicts.length} conflicts, resolving...`);
+        
+        for (const conflict of conflicts) {
+          // Estrategia: El más reciente gana
+          const localDate = new Date(conflict.local.updated_at || conflict.local.created_at);
+          const serverDate = new Date(conflict.server.updated_at || conflict.server.created_at);
+
+          if (localDate > serverDate) {
+            // Local gana
+            console.log(`Resolving conflict: Local wins for ${conflict.local.codigo_unico}`);
+            await supabaseClient.updateTablet(conflict.server.id, conflict.local);
+            await dbManager.saveTablet({ ...conflict.local, id: conflict.server.id, synced: true });
+          } else {
+            // Servidor gana
+            console.log(`Resolving conflict: Server wins for ${conflict.server.codigo_unico}`);
+            await dbManager.saveTablet({ ...conflict.server, synced: true });
+          }
+        }
+      } else {
+        console.log('No conflicts found');
+      }
+
+    } catch (error) {
+      console.error('Error resolving conflicts:', error);
+    }
+  }
+
+  // Buscar tablet en el servidor por múltiples criterios
+  async findTabletOnServer(tablet) {
+    try {
+      // Buscar por ID si existe
+      if (tablet.id) {
+        try {
+          const found = await supabaseClient.getTablet(tablet.id);
+          if (found) return found;
+        } catch (error) {
+          // No existe con ese ID, continuar buscando
+        }
+      }
+
+      // Buscar por código único
+      if (tablet.codigo_unico) {
+        const tablets = await supabaseClient.getTablets({ search: tablet.codigo_unico });
+        const found = tablets.find(t => t.codigo_unico === tablet.codigo_unico);
+        if (found) return found;
+      }
+
+      // Buscar por número de serie
+      if (tablet.numero_serie) {
+        const tablets = await supabaseClient.getTablets({ search: tablet.numero_serie });
+        const found = tablets.find(t => t.numero_serie === tablet.numero_serie);
+        if (found) return found;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error finding tablet on server:', error);
+      return null;
     }
   }
 
