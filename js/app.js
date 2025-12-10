@@ -1,16 +1,3 @@
-// Al inicio de app.js, ANTES de la clase TabletInventoryApp
-console.log('=== DIAGNÓSTICO ===');
-console.log('dbManager:', typeof dbManager);
-console.log('supabaseClient:', typeof supabaseClient);
-console.log('authManager:', typeof authManager);
-console.log('ocrManager:', typeof ocrManager);
-console.log('cameraManager:', typeof cameraManager);
-console.log('syncManager:', typeof syncManager);
-console.log('exportManager:', typeof exportManager);
-console.log('===================');
-
-// Luego continúa con la clase TabletInventoryApp...
-
 // Main Application
 class TabletInventoryApp {
   constructor() {
@@ -45,7 +32,7 @@ class TabletInventoryApp {
       // Initialize sync manager
       syncManager.init();
 
-      // Register service worker
+      // Register service worker - MODIFICADO
       await this.registerServiceWorker();
 
       // Load initial data
@@ -71,11 +58,13 @@ class TabletInventoryApp {
     }
   }
 
-  // Register service worker
+  // Register service worker - CORREGIDO
   async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
-        const registration = await navigator.serviceWorker.register('/sw.js');
+        // Usar la ruta correcta para GitHub Pages
+        const swPath = window.location.hostname === 'localhost' ? '/sw.js' : '/inventarioATT/sw.js';
+        const registration = await navigator.serviceWorker.register(swPath);
         console.log('Service Worker registered:', registration);
 
         // Handle updates
@@ -90,6 +79,8 @@ class TabletInventoryApp {
 
       } catch (error) {
         console.error('Service Worker registration failed:', error);
+        // No es crítico, continuar sin SW
+        console.log('Continuando sin Service Worker...');
       }
     }
   }
@@ -106,7 +97,7 @@ class TabletInventoryApp {
     document.body.innerHTML += `
       <div id="login-container" class="login-container">
         <div class="login-card">
-          <img src="assets/icons/icon-192.png" alt="Logo" class="login-logo">
+          <img src="https://via.placeholder.com/80x80/2563eb/ffffff?text=IT" alt="Logo" class="login-logo">
           <h1>Inventario de Tablets</h1>
           <p class="login-subtitle">Fundación Carlos F. Novella</p>
           
@@ -174,7 +165,10 @@ class TabletInventoryApp {
 
       // If online, sync with server
       if (navigator.onLine) {
-        syncManager.syncAll();
+        // No esperar la sincronización, hacerla en background
+        syncManager.syncAll().catch(err => {
+          console.error('Background sync error:', err);
+        });
       }
 
     } catch (error) {
@@ -408,7 +402,6 @@ class TabletInventoryApp {
         return 'status-default';
     }
   }
-
   // Show tablet detail
   async showTabletDetail(tabletId) {
     try {
@@ -618,7 +611,13 @@ class TabletInventoryApp {
 
       // If online, delete from server
       if (navigator.onLine) {
-        await supabaseClient.deleteTablet(tabletId);
+        try {
+          await supabaseClient.deleteTablet(tabletId);
+        } catch (error) {
+          console.error('Error deleting from server:', error);
+          // Add to sync queue
+          await dbManager.addToSyncQueue('DELETE', 'tablets', tabletId, null);
+        }
       } else {
         // Add to sync queue
         await dbManager.addToSyncQueue('DELETE', 'tablets', tabletId, null);
@@ -720,9 +719,14 @@ class TabletInventoryApp {
 
         // If online, update on server
         if (navigator.onLine) {
-          await supabaseClient.updateTablet(tabletData.id, tabletData);
-          tabletData.synced = true;
-          await dbManager.saveTablet(tabletData);
+          try {
+            await supabaseClient.updateTablet(tabletData.id, tabletData);
+            tabletData.synced = true;
+            await dbManager.saveTablet(tabletData);
+          } catch (error) {
+            console.error('Error updating on server:', error);
+            await dbManager.addToSyncQueue('UPDATE', 'tablets', tabletData.id, tabletData);
+          }
         } else {
           // Add to sync queue
           await dbManager.addToSyncQueue('UPDATE', 'tablets', tabletData.id, tabletData);
@@ -736,10 +740,15 @@ class TabletInventoryApp {
 
         // If online, create on server
         if (navigator.onLine) {
-          const serverTablet = await supabaseClient.createTablet(tabletData);
-          tabletData.id = serverTablet.id;
-          tabletData.synced = true;
-          await dbManager.saveTablet(tabletData);
+          try {
+            const serverTablet = await supabaseClient.createTablet(tabletData);
+            tabletData.id = serverTablet.id;
+            tabletData.synced = true;
+            await dbManager.saveTablet(tabletData);
+          } catch (error) {
+            console.error('Error creating on server:', error);
+            await dbManager.addToSyncQueue('INSERT', 'tablets', tabletData.id, tabletData);
+          }
         } else {
           // Add to sync queue
           await dbManager.addToSyncQueue('INSERT', 'tablets', tabletData.id, tabletData);
@@ -799,14 +808,14 @@ class TabletInventoryApp {
     }
   }
 
-  // Process OCR
+  // Process OCR - CORREGIDO
   async processOCR(imageSource) {
     try {
       // Show preview
       const preview = document.getElementById('ocr-preview');
       const previewImage = document.getElementById('ocr-preview-image');
       
-      if (imageSource instanceof Blob) {
+      if (imageSource instanceof Blob || imageSource instanceof File) {
         const url = URL.createObjectURL(imageSource);
         previewImage.src = url;
       } else {
@@ -872,9 +881,9 @@ class TabletInventoryApp {
 
   // Apply filters
   applyFilters(searchQuery = null) {
-    const search = searchQuery || document.getElementById('search-input').value;
-    const sede = document.getElementById('filter-sede').value;
-    const estado = document.getElementById('filter-estado').value;
+    const search = searchQuery || document.getElementById('search-input')?.value || '';
+    const sede = document.getElementById('filter-sede')?.value || '';
+    const estado = document.getElementById('filter-estado')?.value || '';
 
     this.filteredTablets = this.tablets.filter(tablet => {
       // Search filter
