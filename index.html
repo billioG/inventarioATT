@@ -1,529 +1,496 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#2563eb">
-    <meta name="description" content="Sistema de gestión de inventario de tablets con capacidades offline">
-    
-    <title>Inventario de Tablets - Fundación Carlos F. Novella</title>
-    
-    <!-- Manifest -->
-    <link rel="manifest" href="manifest.json">
-    
-    <!-- Styles -->
- <link rel="stylesheet" href="css/styles.css?v=3">
-
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="Sistema de inventario y mantenimiento de tablets - Fundación Carlos F. Novella">
+  <meta name="theme-color" content="#2d7a3e">
+  
+  <title>Inventario de Tablets - Fundación Carlos F. Novella</title>
+  
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="assets/icons/icon-72.png">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+  
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/styles.css?v=3">
 </head>
 <body>
-    <!-- Splash Screen -->
-    <div id="splash-screen" class="splash-screen">
-        <div class="splash-content">
-            <div class="splash-logo" style="width: 120px; height: 120px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px;">📱</div>
-            <h1>Inventario de Tablets</h1>
-            <div class="spinner"></div>
+
+  <!-- ================================
+       SPLASH SCREEN
+       ================================ -->
+  <div id="splash-screen" class="splash-screen">
+    <div class="splash-logo">📱</div>
+    <h1>Inventario de Tablets</h1>
+    <p>Fundación Carlos F. Novella</p>
+    <div class="splash-spinner"></div>
+  </div>
+
+  <!-- ================================
+       OFFLINE INDICATOR
+       ================================ -->
+  <div id="offline-indicator" class="offline-indicator" style="display: none;">
+    ⚠️ Sin conexión - Trabajando en modo offline
+  </div>
+
+  <!-- ================================
+       MAIN APP
+       ================================ -->
+  <div id="app" style="display: none;">
+    
+    <!-- ================================
+         HEADER
+         ================================ -->
+    <header class="header">
+      <div class="header-content">
+        <div class="header-title">
+          <div class="header-logo">📱</div>
+          <div>
+            <h1>Inventario Tablets</h1>
+            <p>Fundación Carlos F. Novella</p>
+          </div>
         </div>
-    </div>
-
-    <!-- Main App Container -->
-    <div id="app" class="app-container" style="display: none;">
-        <!-- Navigation -->
-        <nav class="nav-bar">
-            <div class="nav-brand">
-                <div style="width: 40px; height: 40px; background: #2563eb; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px;">📱</div>
-                <span class="nav-title">Inventario Tablets</span>
+        <div class="header-actions">
+          <button id="sync-btn" class="header-btn" title="Sincronizar">
+            🔄
+            <span id="sync-status" class="sync-badge">0</span>
+          </button>
+          <button id="export-btn" class="header-btn" title="Exportar">
+            📥
+          </button>
+          <button id="user-menu-btn" class="header-btn" title="Usuario">
+            👤
+          </button>
+          <div id="user-menu" class="user-menu" style="display: none;">
+            <div class="user-menu-item">
+              <span id="user-name">Usuario</span>
             </div>
-            <div class="nav-actions">
-                <button id="sync-btn" class="btn-icon" title="Sincronizar">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
-                    <span id="sync-status" class="sync-badge"></span>
-                </button>
-                <button id="user-menu-btn" class="btn-icon">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-                </button>
+            <div class="user-menu-item">
+              <span id="user-role">Rol</span>
             </div>
-        </nav>
-
-        <!-- User Menu Dropdown -->
-        <div id="user-menu" class="dropdown-menu" style="display: none;">
-            <div class="user-info">
-                <p id="user-name" class="user-name"></p>
-                <p id="user-role" class="user-role"></p>
-            </div>
-            <hr>
-            <button id="logout-btn" class="dropdown-item">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
-                Cerrar Sesión
+            <div class="user-menu-divider"></div>
+            <button id="logout-btn" class="user-menu-item">
+              🚪 Cerrar Sesión
             </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ================================
+         DASHBOARD VIEW
+         ================================ -->
+    <div id="dashboard-view" class="view active">
+      <div class="container">
+        
+        <!-- Statistics -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon">💻</div>
+            <div class="stat-value" id="stat-total">0</div>
+            <div class="stat-label">Total Tablets</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">✅</div>
+            <div class="stat-value" id="stat-good">0</div>
+            <div class="stat-label">Buen Estado</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">⚠️</div>
+            <div class="stat-value" id="stat-attention">0</div>
+            <div class="stat-label">Requieren Atención</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">⏳</div>
+            <div class="stat-value" id="stat-pending">0</div>
+            <div class="stat-label">Pendientes Sincronizar</div>
+          </div>
         </div>
 
-        <!-- Offline Indicator -->
-        <div id="offline-indicator" class="offline-indicator" style="display: none;">
-            <svg class="icon" viewBox="0 0 24 24"><path d="M23.64 7c-.45-.34-4.93-4-11.64-4-1.5 0-2.89.19-4.15.48L18.18 13.8 23.64 7zm-6.6 8.22L3.27 1.44 2 2.72l2.05 2.06C1.91 5.76.59 6.82.36 7l11.63 14.49.01.01.01-.01 3.9-4.86 3.32 3.32 1.27-1.27-3.46-3.46z"/></svg>
-            Modo sin conexión - Los cambios se sincronizarán automáticamente
+        <!-- Search and Filters -->
+        <div class="search-section">
+          <div class="search-bar">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="search-input" placeholder="Buscar por código, modelo, sede...">
+          </div>
+          <div class="filters">
+            <select id="filter-sede">
+              <option value="">Todas las sedes</option>
+            </select>
+            <select id="filter-estado">
+              <option value="">Todos los estados</option>
+              <option value="Bueno">Bueno</option>
+              <option value="Funcional">Funcional</option>
+              <option value="Regular">Regular</option>
+              <option value="Con rayones">Con rayones</option>
+              <option value="Malo">Malo</option>
+              <option value="Roto">Roto</option>
+            </select>
+            <button id="export-btn" class="btn-secondary">
+              📥 Exportar
+            </button>
+          </div>
         </div>
 
-        <!-- Main Content -->
-        <main id="main-content" class="main-content">
-            <!-- Dashboard View -->
-            <section id="dashboard-view" class="view active">
-                <div class="view-header">
-                    <h2>Dashboard</h2>
-                    <div class="search-bar">
-                        <svg class="icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-                        <input type="search" id="search-input" placeholder="Buscar por código, modelo, sede...">
-                    </div>
-                </div>
+        <!-- Tablets List -->
+        <div id="tablets-list" class="tablets-grid"></div>
 
-                <!-- Statistics Cards -->
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-icon blue">
-                            <svg viewBox="0 0 24 24"><path d="M4 6h18V4H4c-1.1 0-2 .9-2 2v11H0v3h14v-3H4V6zm19 2h-6c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V9c0-.55-.45-1-1-1zm-1 9h-4v-7h4v7z"/></svg>
-                        </div>
-                        <div class="stat-content">
-                            <p class="stat-label">Total Tablets</p>
-                            <p id="stat-total" class="stat-value">0</p>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon green">
-                            <svg viewBox="0 0 24 24"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg>
-                        </div>
-                        <div class="stat-content">
-                            <p class="stat-label">Buen Estado</p>
-                            <p id="stat-good" class="stat-value">0</p>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon orange">
-                            <svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
-                        </div>
-                        <div class="stat-content">
-                            <p class="stat-label">Requieren Atención</p>
-                            <p id="stat-attention" class="stat-value">0</p>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon purple">
-                            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-                        </div>
-                        <div class="stat-content">
-                            <p class="stat-label">Pendientes Sincronizar</p>
-                            <p id="stat-pending" class="stat-value">0</p>
-                        </div>
-                    </div>
-                </div>
+        <!-- Empty State -->
+        <div id="empty-state" class="empty-state">
+          <div class="empty-state-icon">📱</div>
+          <h3>No hay tablets registradas</h3>
+          <p>Agrega tu primera tablet usando el botón +</p>
+        </div>
 
-                <!-- Filter Controls -->
-                <div class="filter-controls">
-                    <select id="filter-sede" class="filter-select">
-                        <option value="">Todas las sedes</option>
-                    </select>
-                    <select id="filter-estado" class="filter-select">
-                        <option value="">Todos los estados</option>
-                        <option value="Bueno">Bueno</option>
-                        <option value="Regular">Regular</option>
-                        <option value="Malo">Malo</option>
-                    </select>
-                    <button id="export-btn" class="btn-secondary">
-                        <svg class="icon" viewBox="0 0 24 24"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2z"/></svg>
-                        Exportar
-                    </button>
-                </div>
-
-                <!-- Export Options Modal -->
-                <div id="export-modal" class="modal" style="display: none;">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h3>Exportar Inventario</h3>
-                            <button class="btn-close" data-modal="export-modal">&times;</button>
-                        </div>
-                        <div class="modal-body">
-                            <button id="export-excel" class="export-option">
-                                <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/></svg>
-                                Exportar como Excel (.xlsx)
-                            </button>
-                            <button id="export-csv" class="export-option">
-                                <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6z"/></svg>
-                                Exportar como CSV
-                            </button>
-                            <button id="export-pdf" class="export-option">
-                                <svg class="icon" viewBox="0 0 24 24"><path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .83-.67 1.5-1.5 1.5H9v2H7.5V7H10c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V7H15c.83 0 1.5.67 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5z"/></svg>
-                                Exportar como PDF
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Tablets List -->
-                <div id="tablets-list" class="tablets-grid">
-                    <!-- Dynamically populated -->
-                </div>
-
-                <!-- Empty State -->
-                <div id="empty-state" class="empty-state" style="display: none;">
-                    <svg class="empty-icon" viewBox="0 0 24 24"><path d="M19 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h4l3 3 3-3h4c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM9 12H7V7h2v5zm4 0h-2V7h2v5zm4 0h-2V7h2v5z"/></svg>
-                    <h3>No hay tablets registradas</h3>
-                    <p>Comienza agregando tu primera tablet usando el botón de abajo</p>
-                </div>
-            </section>
-
-            <!-- Add/Edit Tablet View -->
-            <section id="form-view" class="view">
-                <div class="view-header">
-                    <button id="back-btn" class="btn-back">
-                        <svg class="icon" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
-                    </button>
-                    <h2 id="form-title">Agregar Tablet</h2>
-                </div>
-
-                <form id="tablet-form" class="tablet-form">
-                    <!-- OCR Section -->
-                    <div class="form-section">
-                        <h3>Escanear Información</h3>
-                        <div class="ocr-capture">
-                            <div id="camera-preview" class="camera-preview" style="display: none;">
-                                <video id="camera-video" autoplay playsinline></video>
-                                <canvas id="camera-canvas" style="display: none;"></canvas>
-                                <button type="button" id="capture-btn" class="btn-capture">
-                                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>
-                                </button>
-                            </div>
-                            
-                            <div class="capture-buttons">
-                                <button type="button" id="start-camera-btn" class="btn-secondary">
-                                    <svg class="icon" viewBox="0 0 24 24"><path d="M12 12.5c-1.38 0-2.5 1.12-2.5 2.5s1.12 2.5 2.5 2.5 2.5-1.12 2.5-2.5-1.12-2.5-2.5-2.5zM9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                                    Usar Cámara
-                                </button>
-                                <button type="button" id="upload-image-btn" class="btn-secondary">
-                                    <svg class="icon" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
-                                    Subir Foto
-                                </button>
-                                <input type="file" id="image-upload-input" accept="image/*" style="display: none;">
-                            </div>
-
-                            <div id="ocr-status" class="ocr-status" style="display: none;">
-                                <div class="spinner-small"></div>
-                                <p id="ocr-status-text">Procesando imagen...</p>
-                            </div>
-
-                            <div id="ocr-preview" class="ocr-preview" style="display: none;">
-                                <img id="ocr-preview-image" alt="Vista previa">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Información Básica -->
-                    <div class="form-section">
-                        <h3>Información Básica</h3>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label for="codigo_unico">Código Único (Automático) *</label>
-                                <input type="text" id="codigo_unico" name="codigo_unico" required readonly style="background-color: #f3f4f6;">
-                                <small style="color: var(--gray-600); font-size: var(--font-size-xs); margin-top: 4px; display: block;">
-                                    Se genera automáticamente
-                                </small>
-                            </div>
-                            <div class="form-group">
-                                <label for="numero_serie">Número de Serie *</label>
-                                <input type="text" id="numero_serie" name="numero_serie" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="modelo">Modelo *</label>
-                                <input type="text" id="modelo" name="modelo" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="nombre_producto">Nombre del Producto</label>
-                                <input type="text" id="nombre_producto" name="nombre_producto">
-                            </div>
-                            <div class="form-group">
-                                <label for="numero_modelo">Número de Modelo</label>
-                                <input type="text" id="numero_modelo" name="numero_modelo">
-                            </div>
-                            <div class="form-group">
-                                <label for="sede_procedencia">Sede de Procedencia *</label>
-                                <select id="sede_procedencia" name="sede_procedencia" required>
-                                    <option value="">Seleccionar sede...</option>
-                                    <option value="Sanarate">Sanarate</option>
-                                    <option value="La Pedrera/Chinautla">La Pedrera/Chinautla</option>
-                                    <option value="San Juan Sacatepéquez">San Juan Sacatepéquez</option>
-                                    <option value="Santo Domingo Xenacoj">Santo Domingo Xenacoj</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Información Técnica -->
-                    <div class="form-section">
-                        <h3>Información Técnica</h3>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label for="version_android">Versión de Android</label>
-                                <input type="text" id="version_android" name="version_android">
-                            </div>
-                            <div class="form-group">
-                                <label for="nivel_bateria">Nivel de Batería (%)</label>
-                                <input type="number" id="nivel_bateria" name="nivel_bateria" min="0" max="100">
-                                <div class="input-helper">
-                                    <input type="range" id="nivel_bateria_slider" min="0" max="100" value="0">
-                                    <span id="nivel_bateria_display">0%</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Estado del Dispositivo -->
-                    <div class="form-section">
-                        <h3>Estado del Dispositivo</h3>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label for="estado_pantalla">Estado de Pantalla *</label>
-                                <select id="estado_pantalla" name="estado_pantalla" required>
-                                    <option value="">Seleccionar...</option>
-                                    <option value="Bueno">Bueno</option>
-                                    <option value="Regular">Regular</option>
-                                    <option value="Malo">Malo</option>
-                                    <option value="Funcional">Funcional</option>
-                                    <option value="Con rayones">Con rayones</option>
-                                    <option value="Roto">Roto</option>
-                                    <option value="Otro">Otro</option>
-                                </select>
-                            </div>
-                            <div class="form-group" id="estado_pantalla_otro_group" style="display: none;">
-                                <label for="estado_pantalla_otro">Especificar Estado de Pantalla</label>
-                                <input type="text" id="estado_pantalla_otro" name="estado_pantalla_otro">
-                            </div>
-                            <div class="form-group">
-                                <label for="estado_puerto_carga">Estado Puerto de Carga *</label>
-                                <select id="estado_puerto_carga" name="estado_puerto_carga" required>
-                                    <option value="">Seleccionar...</option>
-                                    <option value="Bueno">Bueno</option>
-                                    <option value="Regular">Regular</option>
-                                    <option value="Malo">Malo</option>
-                                    <option value="No funciona">No funciona</option>
-                                </select>
-                            </div>
-                            <div class="form-group full-width">
-                                <label for="estado_fisico_general">Estado Físico General *</label>
-                                <select id="estado_fisico_general" name="estado_fisico_general" required>
-                                    <option value="">Seleccionar...</option>
-                                    <option value="En buen estado">En buen estado</option>
-                                    <option value="Ya no enciende">Ya no enciende</option>
-                                    <option value="Poca batería">Poca batería</option>
-                                    <option value="Ya no carga">Ya no carga</option>
-                                    <option value="Puerto de carga en mal estado">Puerto de carga en mal estado</option>
-                                    <option value="Se traba al utilizarla">Se traba al utilizarla</option>
-                                    <option value="No se puede instalar la app">No se puede instalar la app</option>
-                                    <option value="La aplicación se instala pero se cierra al tiempo de utilizarla">La aplicación se instala pero se cierra al tiempo de utilizarla</option>
-                                    <option value="Otro">Otro</option>
-                                </select>
-                            </div>
-                            <div class="form-group full-width" id="estado_fisico_otro_group" style="display: none;">
-                                <label for="estado_fisico_otro">Especificar Estado Físico General</label>
-                                <textarea id="estado_fisico_otro" name="estado_fisico_otro" rows="2"></textarea>
-                            </div>
-                        </div>
-
-                        <!-- Accesorios -->
-                        <div class="checkbox-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="tiene_cargador" name="tiene_cargador">
-                                <span>Tiene cargador</span>
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="tiene_cable" name="tiene_cable">
-                                <span>Tiene cable de carga</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- Observaciones -->
-                    <div class="form-section">
-                        <h3>Observaciones y Evidencias</h3>
-                        <div class="form-group">
-                            <label for="observaciones">Observaciones Adicionales</label>
-                            <textarea id="observaciones" name="observaciones" rows="3"></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label for="hallazgos_relevantes">Hallazgos Relevantes</label>
-                            <textarea id="hallazgos_relevantes" name="hallazgos_relevantes" rows="3"></textarea>
-                        </div>
-
-                        <!-- Fotos de Evidencia -->
-                        <div class="form-group">
-                            <label>Fotos de Evidencia</label>
-                            <div class="evidence-photos">
-                                <button type="button" id="add-evidence-btn" class="btn-add-photo">
-                                    <svg viewBox="0 0 24 24"><path d="M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z"/></svg>
-                                    Agregar Foto
-                                </button>
-                                <input type="file" id="evidence-upload-input" accept="image/*" multiple style="display: none;">
-                                <div id="evidence-preview" class="evidence-preview"></div>
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="fecha_mantenimiento">Fecha de Finalización del Mantenimiento *</label>
-                            <input type="date" id="fecha_mantenimiento" name="fecha_mantenimiento" required>
-                        </div>
-                    </div>
-
-                    <!-- Form Actions -->
-                    <div class="form-actions">
-                        <button type="button" id="cancel-form-btn" class="btn-secondary">Cancelar</button>
-                        <button type="submit" id="submit-form-btn" class="btn-primary">
-                            <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg>
-                            Guardar Tablet
-                        </button>
-                    </div>
-                </form>
-            </section>
-
-            <!-- Detail View -->
-            <section id="detail-view" class="view">
-                <div class="view-header">
-                    <button id="detail-back-btn" class="btn-back">
-                        <svg class="icon" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
-                    </button>
-                    <h2>Detalles de Tablet</h2>
-                    <div class="detail-actions">
-                        <button id="edit-tablet-btn" class="btn-icon" data-role="tecnico,admin">
-                            <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
-                        </button>
-                        <button id="delete-tablet-btn" class="btn-icon btn-danger" data-role="admin">
-                            <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                        </button>
-                    </div>
-                </div>
-
-                <div id="tablet-detail-content" class="detail-content">
-                    <!-- Dynamically populated -->
-                </div>
-            </section>
-
-            <!-- Admin Panel -->
-            <section id="admin-view" class="view" data-role="admin">
-                <div class="view-header">
-                    <button id="admin-back-btn" class="btn-back">
-                        <svg class="icon" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
-                    </button>
-                    <h2>Panel de Administración</h2>
-                </div>
-
-                <div class="admin-content">
-                    <h3>Gestión de Usuarios</h3>
-                    <div id="users-list" class="users-list">
-                        <!-- Dynamically populated -->
-                    </div>
-
-                    <h3>Registro de Sincronización</h3>
-                    <div id="sync-log" class="sync-log">
-                        <!-- Dynamically populated -->
-                    </div>
-                </div>
-            </section>
-        </main>
-
-        <!-- Floating Action Button -->
-        <button id="fab" class="fab" data-role="tecnico,admin">
-            <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-        </button>
-
-        <!-- Toast Notifications -->
-        <div id="toast-container" class="toast-container"></div>
+      </div>
     </div>
 
-      <!-- Scripts -->
-    <script>
-      // Función para cargar scripts con fallback
-      function loadScriptWithFallback(src, fallbackSrc = null) {
-        return new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = src;
-          script.onload = () => {
-            console.log(`✓ Loaded: ${src}`);
+    <!-- ================================
+         FORM VIEW
+         ================================ -->
+    <div id="form-view" class="view">
+      <div class="container">
+        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
+          <button id="back-btn" class="header-btn" style="background: var(--primary-green);">
+            ← 
+          </button>
+          <h2 id="form-title">Agregar Tablet</h2>
+        </div>
+
+        <form id="tablet-form">
+          
+          <!-- Escanear Información -->
+          <div class="form-section">
+            <h3>Escanear Información</h3>
+            <div class="camera-buttons">
+              <button type="button" id="start-camera-btn" class="btn-secondary">
+                📷 Usar Cámara
+              </button>
+              <button type="button" id="upload-image-btn" class="btn-secondary">
+                🖼️ Subir Foto
+              </button>
+              <input type="file" id="image-upload-input" accept="image/*" style="display: none;">
+            </div>
+            <div id="camera-preview" class="camera-preview">
+              <video id="camera-video" autoplay playsinline></video>
+              <canvas id="camera-canvas"></canvas>
+              <button type="button" id="capture-btn" class="btn-primary" style="margin-top: 1rem;">
+                📸 Capturar
+              </button>
+            </div>
+            <div id="ocr-preview" class="ocr-preview">
+              <img id="ocr-preview-image" alt="Preview">
+            </div>
+          </div>
+
+          <!-- Información Básica -->
+          <div class="form-section">
+            <h3>Información Básica</h3>
+            <div class="form-group">
+              <label for="codigo_unico">Código Único *</label>
+              <input type="text" id="codigo_unico" name="codigo_unico" required readonly>
+            </div>
+            <div class="form-group">
+              <label for="numero_serie">Número de Serie *</label>
+              <input type="text" id="numero_serie" name="numero_serie" required>
+            </div>
+            <div class="form-group">
+              <label for="modelo">Modelo *</label>
+              <input type="text" id="modelo" name="modelo" required>
+            </div>
+            <div class="form-group">
+              <label for="nombre_producto">Nombre del Producto</label>
+              <input type="text" id="nombre_producto" name="nombre_producto">
+            </div>
+            <div class="form-group">
+              <label for="numero_modelo">Número de Modelo</label>
+              <input type="text" id="numero_modelo" name="numero_modelo">
+            </div>
+            <div class="form-group">
+              <label for="sede_procedencia">Sede de Procedencia *</label>
+              <select id="sede_procedencia" name="sede_procedencia" required>
+                <option value="">Seleccionar sede</option>
+                <option value="Sede Central">Sede Central</option>
+                <option value="Sede Norte">Sede Norte</option>
+                <option value="Sede Sur">Sede Sur</option>
+                <option value="Sede Este">Sede Este</option>
+                <option value="Sede Oeste">Sede Oeste</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Información Técnica -->
+          <div class="form-section">
+            <h3>Información Técnica</h3>
+            <div class="form-group">
+              <label for="version_android">Versión de Android</label>
+              <input type="text" id="version_android" name="version_android" placeholder="Ej: Android 11">
+            </div>
+            <div class="form-group">
+              <label for="nivel_bateria">Nivel de Batería (%)</label>
+              <input type="range" id="nivel_bateria_slider" min="0" max="100" value="0" style="width: 100%;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
+                <input type="number" id="nivel_bateria" name="nivel_bateria" min="0" max="100" value="0" style="width: 80px;">
+                <span id="nivel_bateria_display" style="font-weight: 600; color: var(--primary-green);">0%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Estado del Dispositivo -->
+          <div class="form-section">
+            <h3>Estado del Dispositivo</h3>
+            <div class="form-group">
+              <label for="estado_pantalla">Estado de Pantalla *</label>
+              <select id="estado_pantalla" name="estado_pantalla" required>
+                <option value="">Seleccionar estado</option>
+                <option value="Bueno">Bueno</option>
+                <option value="Con rayones">Con rayones</option>
+                <option value="Roto">Roto</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </div>
+            <div id="estado_pantalla_otro_group" class="form-group" style="display: none;">
+              <label for="estado_pantalla_otro">Especificar otro estado de pantalla</label>
+              <input type="text" id="estado_pantalla_otro" name="estado_pantalla_otro">
+            </div>
+            <div class="form-group">
+              <label for="estado_puerto_carga">Estado del Puerto de Carga *</label>
+              <select id="estado_puerto_carga" name="estado_puerto_carga" required>
+                <option value="">Seleccionar estado</option>
+                <option value="Funcional">Funcional</option>
+                <option value="Suelto">Suelto</option>
+                <option value="Dañado">Dañado</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="estado_fisico_general">Estado Físico General *</label>
+              <select id="estado_fisico_general" name="estado_fisico_general" required>
+                <option value="">Seleccionar estado</option>
+                <option value="Excelente">Excelente</option>
+                <option value="Bueno">Bueno</option>
+                <option value="Regular">Regular</option>
+                <option value="Malo">Malo</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </div>
+            <div id="estado_fisico_otro_group" class="form-group" style="display: none;">
+              <label for="estado_fisico_otro">Especificar otro estado físico</label>
+              <input type="text" id="estado_fisico_otro" name="estado_fisico_otro">
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="tiene_cargador" name="tiene_cargador">
+                <span>Tiene cargador</span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="tiene_cable" name="tiene_cable">
+                <span>Tiene cable de carga</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Observaciones -->
+          <div class="form-section">
+            <h3>Observaciones</h3>
+            <div class="form-group">
+              <label for="observaciones">Observaciones Adicionales</label>
+              <textarea id="observaciones" name="observaciones" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="hallazgos_relevantes">Hallazgos Relevantes</label>
+              <textarea id="hallazgos_relevantes" name="hallazgos_relevantes" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="fecha_mantenimiento">Fecha de Mantenimiento *</label>
+              <input type="date" id="fecha_mantenimiento" name="fecha_mantenimiento" required>
+            </div>
+          </div>
+
+          <!-- Fotos de Evidencia -->
+          <div class="form-section">
+            <h3>Fotos de Evidencia</h3>
+            <button type="button" id="add-evidence-btn" class="btn-secondary">
+              📷 Agregar Fotos
+            </button>
+            <input type="file" id="evidence-upload-input" accept="image/*" multiple style="display: none;">
+            <div id="evidence-preview" class="evidence-preview"></div>
+          </div>
+
+          <!-- Form Actions -->
+          <div class="form-actions">
+            <button type="button" id="cancel-form-btn" class="btn-secondary">
+              Cancelar
+            </button>
+            <button type="submit" class="btn-primary">
+              💾 Guardar
+            </button>
+          </div>
+
+        </form>
+      </div>
+    </div>
+
+    <!-- ================================
+         DETAIL VIEW
+         ================================ -->
+    <div id="detail-view" class="view">
+      <div class="container">
+        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
+          <button id="detail-back-btn" class="header-btn" style="background: var(--primary-green);">
+            ←
+          </button>
+          <h2>Detalles de Tablet</h2>
+        </div>
+
+        <div id="tablet-detail-content"></div>
+
+        <div class="form-actions">
+          <button id="delete-tablet-btn" class="btn-danger">
+            🗑️ Eliminar
+          </button>
+          <button id="edit-tablet-btn" class="btn-primary">
+            ✏️ Editar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================
+         FAB (Floating Action Button)
+         ================================ -->
+    <button id="fab" class="fab" title="Agregar Tablet">
+      +
+    </button>
+
+  </div>
+
+  <!-- ================================
+       EXPORT MODAL
+       ================================ -->
+  <div id="export-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Exportar Datos</h2>
+        <button class="btn-close" data-modal="export-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>Selecciona el formato de exportación:</p>
+        <button id="export-excel" class="btn-primary btn-block" style="margin-bottom: 0.5rem;">
+          📊 Excel (.xlsx)
+        </button>
+        <button id="export-csv" class="btn-primary btn-block" style="margin-bottom: 0.5rem;">
+          📄 CSV
+        </button>
+        <button id="export-pdf" class="btn-primary btn-block">
+          📑 PDF
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================
+       TOAST CONTAINER
+       ================================ -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- ================================
+       SCRIPTS
+       ================================ -->
+  <script>
+    // Función para cargar scripts con fallback
+    function loadScriptWithFallback(src, fallbackSrc = null) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = () => {
+          console.log(`✓ Loaded: ${src}`);
+          resolve();
+        };
+        script.onerror = () => {
+          console.warn(`✗ Failed to load: ${src}`);
+          if (fallbackSrc) {
+            console.log(`Trying fallback: ${fallbackSrc}`);
+            const fallbackScript = document.createElement('script');
+            fallbackScript.src = fallbackSrc;
+            fallbackScript.onload = () => {
+              console.log(`✓ Loaded fallback: ${fallbackSrc}`);
+              resolve();
+            };
+            fallbackScript.onerror = () => {
+              console.error(`✗ Failed to load fallback: ${fallbackSrc}`);
+              resolve();
+            };
+            document.head.appendChild(fallbackScript);
+          } else {
             resolve();
-          };
-          script.onerror = () => {
-            console.warn(`✗ Failed to load: ${src}`);
-            if (fallbackSrc) {
-              console.log(`Trying fallback: ${fallbackSrc}`);
-              const fallbackScript = document.createElement('script');
-              fallbackScript.src = fallbackSrc;
-              fallbackScript.onload = () => {
-                console.log(`✓ Loaded fallback: ${fallbackSrc}`);
-                resolve();
-              };
-              fallbackScript.onerror = () => {
-                console.error(`✗ Failed to load fallback: ${fallbackSrc}`);
-                resolve(); // Continuar sin la librería
-              };
-              document.head.appendChild(fallbackScript);
-            } else {
-              resolve(); // Continuar sin la librería
-            }
-          };
-          document.head.appendChild(script);
-        });
-      }
-
-      // Cargar librerías CDN con fallbacks
-      async function loadLibraries() {
-        console.log('Loading external libraries...');
-        
-        await loadScriptWithFallback(
-          'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-          'https://unpkg.com/@supabase/supabase-js@2'
-        );
-        
-        await loadScriptWithFallback(
-          'https://cdn.jsdelivr.net/npm/tesseract.js@4',
-          'https://unpkg.com/tesseract.js@4'
-        );
-        
-        await loadScriptWithFallback(
-          'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-          'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js'
-        );
-        
-        await loadScriptWithFallback(
-          'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-          'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js'
-        );
-        
-        await loadScriptWithFallback(
-          'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js',
-          'https://unpkg.com/jspdf-autotable@3.5.31/dist/jspdf.plugin.autotable.min.js'
-        );
-
-        console.log('Libraries loaded, starting app...');
-        
-        // Cargar scripts de la aplicación
-        const appScripts = [
-          'js/db.js',
-          'js/supabase-client.js',
-          'js/ocr.js',
-          'js/camera.js',
-          'js/auth.js',
-          'js/sync.js',
-          'js/export.js',
-          'js/app.js'
-        ];
-
-        for (const src of appScripts) {
-          await loadScriptWithFallback(src);
-        }
-      }
-
-      // Iniciar carga
-      loadLibraries().catch(error => {
-        console.error('Error loading libraries:', error);
-        alert('Error al cargar la aplicación. Por favor recarga la página.');
+          }
+        };
+        document.head.appendChild(script);
       });
-    </script>
-</body>
-</html>
+    }
+
+    // Cargar librerías CDN con fallbacks
+    async function loadLibraries() {
+      console.log('Loading external libraries...');
+      
+      await loadScriptWithFallback(
+        'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+        'https://unpkg.com/@supabase/supabase-js@2'
+      );
+      
+      await loadScriptWithFallback(
+        'https://cdn.jsdelivr.net/npm/tesseract.js@4',
+        'https://unpkg.com/tesseract.js@4'
+      );
+      
+      await loadScriptWithFallback(
+        'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+        'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js'
+      );
+      
+      await loadScriptWithFallback(
+        'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+        'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js'
+      );
+      
+      await loadScriptWithFallback(
+        'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js',
+        'https://unpkg.com/jspdf-autotable@3.5.31/dist/jspdf.plugin.autotable.min.js'
+      );
+
+      console.log('Libraries loaded, starting app...');
+      
+      // Cargar scripts de la aplicación EN ORDEN
+      const appScripts = [
+        'js/db.js',
+        'js/supabase-client.js',
+        'js/ocr.js',
+        'js/camera.js',
+        'js/auth.js',
+        'js/sync.js',
+        'js/export.js',
+        'js/app.js'
+      ];
+
+      for (const src of appScripts) {
+        await loadScriptWithFallback(src);
+      }
+      
+      console.log('All scripts loaded!');
+    }
+
+    // Iniciar carga
+    loadLibraries().catch(error => {
+      console.error('Error loading libraries:', error);
+      alert('Error al cargar la aplicación. Por favor recarga la página.');
+    });
+  </script>
 
 </body>
 </html>
