@@ -1,48 +1,66 @@
-// Sync Manager for Offline/Online synchronization
+// Sync Manager for Online/Offline Synchronization
 class SyncManager {
   constructor() {
     this.isSyncing = false;
     this.syncInterval = null;
-    this.autoSyncEnabled = true;
+    this.realtimeSubscription = null;
   }
 
   // Initialize sync manager
   init() {
+    console.log('Initializing Sync Manager...');
+
     // Listen for online/offline events
     window.addEventListener('online', () => this.handleOnline());
     window.addEventListener('offline', () => this.handleOffline());
 
-    // Check initial connection status
+    // Check initial connection state
     if (navigator.onLine) {
       this.handleOnline();
     } else {
       this.handleOffline();
     }
 
-    // Auto-sync every 5 minutes when online
-    this.startAutoSync();
+    // Setup periodic sync (every 5 minutes)
+    this.syncInterval = setInterval(() => {
+      if (navigator.onLine && !this.isSyncing) {
+        this.syncAll();
+      }
+    }, 5 * 60 * 1000);
 
-    // Register background sync if supported
-    this.registerBackgroundSync();
+    // Setup realtime subscription if online
+    if (navigator.onLine) {
+      this.setupRealtimeSync();
+    }
+
+    // Update sync badge on init
+    this.updateSyncBadge();
   }
 
   // Handle online event
-  async handleOnline() {
+  handleOnline() {
     console.log('Connection restored - going online');
     this.hideOfflineIndicator();
-    showToast('Conexión restaurada. Sincronizando datos...', 'success');
     
-    // Wait a bit for connection to stabilize
+    // Sync after a short delay
     setTimeout(() => {
       this.syncAll();
     }, 1000);
+
+    // Setup realtime sync
+    this.setupRealtimeSync();
   }
 
   // Handle offline event
   handleOffline() {
     console.log('Connection lost - going offline');
     this.showOfflineIndicator();
-    showToast('Sin conexión. Trabajando en modo offline.', 'warning');
+
+    // Unsubscribe from realtime updates
+    if (this.realtimeSubscription) {
+      supabaseClient.unsubscribe(this.realtimeSubscription);
+      this.realtimeSubscription = null;
+    }
   }
 
   // Show offline indicator
@@ -51,7 +69,6 @@ class SyncManager {
     if (indicator) {
       indicator.style.display = 'flex';
     }
-    this.updateSyncBadge();
   }
 
   // Hide offline indicator
@@ -62,83 +79,84 @@ class SyncManager {
     }
   }
 
-  // Start auto-sync interval
-  startAutoSync() {
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
-    }
+  // Setup realtime synchronization
+  setupRealtimeSync() {
+    if (!navigator.onLine) return;
 
-    this.syncInterval = setInterval(() => {
-      if (this.autoSyncEnabled && navigator.onLine) {
-        this.syncAll();
-      }
-    }, 5 * 60 * 1000); // 5 minutes
-  }
-
-  // Stop auto-sync
-  stopAutoSync() {
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
-      this.syncInterval = null;
-    }
-  }
-
-  // Register background sync
-  async registerBackgroundSync() {
     try {
-      if ('serviceWorker' in navigator && 'sync' in navigator.serviceWorker) {
-        const registration = await navigator.serviceWorker.ready;
-        await registration.sync.register('sync-tablets');
-        console.log('Background sync registered');
-      }
+      this.realtimeSubscription = supabaseClient.subscribeToTablets((payload) => {
+        console.log('Realtime update received:', payload);
+        this.handleRealtimeUpdate(payload);
+      });
     } catch (error) {
-      console.error('Background sync registration failed:', error);
+      console.error('Error setting up realtime sync:', error);
     }
   }
 
-  // Main sync function
+  // Handle realtime update
+  async handleRealtimeUpdate(payload) {
+    try {
+      const { eventType, new: newRecord, old: oldRecord } = payload;
+
+      switch (eventType) {
+        case 'INSERT':
+          await dbManager.saveTablet({ ...newRecord, synced: true });
+          showToast('Nueva tablet sincronizada desde el servidor', 'info');
+          break;
+
+        case 'UPDATE':
+          await dbManager.saveTablet({ ...newRecord, synced: true });
+          showToast('Tablet actualizada desde el servidor', 'info');
+          break;
+
+        case 'DELETE':
+          await dbManager.deleteTablet(oldRecord.id);
+          showToast('Tablet eliminada desde el servidor', 'info');
+          break;
+      }
+
+      // Reload data in app
+      if (window.app) {
+        await window.app.loadData();
+      }
+
+    } catch (error) {
+      console.error('Error handling realtime update:', error);
+    }
+  }
+
+  // Sync all data
   async syncAll() {
-    if (this.isSyncing) {
-      console.log('Sync already in progress');
+    if (this.isSyncing || !navigator.onLine) {
       return;
     }
 
-    if (!navigator.onLine) {
-      console.log('Cannot sync - offline');
-      return;
-    }
+    this.isSyncing = true;
+    console.log('Starting full sync...');
 
     try {
-      this.isSyncing = true;
-      this.updateSyncButton(true);
-
-      console.log('Starting full sync...');
-
-      // Sync tablets from IndexedDB to Supabase
+      // Sync tablets to server
       await this.syncTabletsToServer();
 
-      // Sync tablets from Supabase to IndexedDB
+      // Sync tablets from server
       await this.syncTabletsFromServer();
 
       // Process sync queue
       await this.processSyncQueue();
 
-      // Update sync badge
-      this.updateSyncBadge();
-
-      console.log('Sync completed successfully');
+      console.log('Full sync completed successfully');
       showToast('Sincronización completada', 'success');
 
     } catch (error) {
       console.error('Sync error:', error);
-      showToast('Error al sincronizar: ' + error.message, 'error');
+      showToast('Error en la sincronización: ' + error.message, 'error');
     } finally {
       this.isSyncing = false;
-      this.updateSyncButton(false);
+      await this.updateSyncBadge();
     }
   }
 
-  // Sync unsynced tablets to server
+  // Sync unsynced tablets to server - CORREGIDO CON MANEJO DE DUPLICADOS
   async syncTabletsToServer() {
     try {
       const unsyncedTablets = await dbManager.getUnsyncedTablets();
@@ -154,29 +172,54 @@ class SyncManager {
         try {
           let serverTablet;
 
-          // Check if tablet exists on server (by codigo_unico)
-          const existing = await this.checkTabletExists(tablet.codigo_unico);
+          // Check if tablet exists on server (by codigo_unico o numero_serie)
+          const existing = await this.checkTabletExistsByMultipleFields(tablet);
 
           if (existing) {
+            console.log(`Tablet ${tablet.codigo_unico} already exists on server, updating...`);
             // Update existing
             serverTablet = await supabaseClient.updateTablet(existing.id, tablet);
           } else {
-            // Create new
+            // Create new - remover campos que no deben enviarse
             const { id, synced, last_synced_at, ...tabletData } = tablet;
             serverTablet = await supabaseClient.createTablet(tabletData);
           }
 
-          // Update local copy with server data
-          tablet.id = serverTablet.id;
-          tablet.synced = true;
-          tablet.last_synced_at = new Date().toISOString();
-          await dbManager.saveTablet(tablet);
+          // Actualizar local con ID del servidor y marcar como sincronizado
+          const updatedTablet = {
+            ...tablet,
+            id: serverTablet.id,
+            synced: true,
+            last_synced_at: new Date().toISOString()
+          };
+          
+          await dbManager.saveTablet(updatedTablet);
 
-          console.log(`Tablet ${tablet.codigo_unico} synced`);
+          console.log(`Tablet ${tablet.codigo_unico} synced successfully`);
 
         } catch (error) {
           console.error(`Error syncing tablet ${tablet.codigo_unico}:`, error);
-          // Continue with next tablet
+          
+          // Si es error de duplicado, buscar y actualizar
+          if (error.code === '23505') {
+            console.log(`Duplicate detected for ${tablet.codigo_unico}, attempting to find and update...`);
+            try {
+              const existing = await this.checkTabletExistsByMultipleFields(tablet);
+              if (existing) {
+                const serverTablet = await supabaseClient.updateTablet(existing.id, tablet);
+                const updatedTablet = {
+                  ...tablet,
+                  id: serverTablet.id,
+                  synced: true,
+                  last_synced_at: new Date().toISOString()
+                };
+                await dbManager.saveTablet(updatedTablet);
+                console.log(`Tablet ${tablet.codigo_unico} updated after duplicate detection`);
+              }
+            } catch (retryError) {
+              console.error(`Failed to recover from duplicate:`, retryError);
+            }
+          }
         }
       }
 
@@ -186,43 +229,60 @@ class SyncManager {
     }
   }
 
-  // Sync tablets from server to local
+  // Check if tablet exists on server by multiple fields - NUEVO
+  async checkTabletExistsByMultipleFields(tablet) {
+    try {
+      // Buscar por código único primero
+      let tablets = await supabaseClient.getTablets({ search: tablet.codigo_unico });
+      let found = tablets.find(t => t.codigo_unico === tablet.codigo_unico);
+      
+      if (found) return found;
+
+      // Si no se encuentra, buscar por número de serie
+      if (tablet.numero_serie) {
+        tablets = await supabaseClient.getTablets({ search: tablet.numero_serie });
+        found = tablets.find(t => t.numero_serie === tablet.numero_serie);
+      }
+      
+      return found || null;
+    } catch (error) {
+      console.error('Error checking tablet existence:', error);
+      return null;
+    }
+  }
+
+  // Check if tablet exists on server - MANTENER POR COMPATIBILIDAD
+  async checkTabletExists(codigoUnico) {
+    return this.checkTabletExistsByMultipleFields({ codigo_unico: codigoUnico });
+  }
+
+  // Sync tablets from server
   async syncTabletsFromServer() {
     try {
       console.log('Fetching tablets from server...');
-      
+
       const serverTablets = await supabaseClient.getTablets();
-      
       console.log(`Received ${serverTablets.length} tablets from server`);
 
       for (const serverTablet of serverTablets) {
-        try {
-          const localTablet = await dbManager.getTablet(serverTablet.id);
+        const localTablet = await dbManager.getTablet(serverTablet.id);
 
-          if (!localTablet) {
-            // New tablet from server - save locally
-            await dbManager.saveTablet({
-              ...serverTablet,
-              synced: true,
-              last_synced_at: new Date().toISOString()
-            });
-          } else {
-            // Compare timestamps and update if server is newer
-            const serverTime = new Date(serverTablet.updated_at).getTime();
-            const localTime = new Date(localTablet.updated_at).getTime();
+        if (!localTablet) {
+          // New tablet from server
+          await dbManager.saveTablet({ ...serverTablet, synced: true });
+        } else {
+          // Check if server version is newer
+          const serverDate = new Date(serverTablet.updated_at || serverTablet.created_at);
+          const localDate = new Date(localTablet.updated_at || localTablet.created_at);
 
-            if (serverTime > localTime) {
-              await dbManager.saveTablet({
-                ...serverTablet,
-                synced: true,
-                last_synced_at: new Date().toISOString()
-              });
-            }
+          if (serverDate > localDate) {
+            // Server version is newer, update local
+            await dbManager.saveTablet({ ...serverTablet, synced: true });
           }
-        } catch (error) {
-          console.error(`Error processing tablet ${serverTablet.id}:`, error);
         }
       }
+
+      console.log('Tablets synced from server successfully');
 
     } catch (error) {
       console.error('Error syncing tablets from server:', error);
@@ -233,46 +293,34 @@ class SyncManager {
   // Process sync queue
   async processSyncQueue() {
     try {
-      const queue = await dbManager.getUnsyncedQueue();
-      
-      if (queue.length === 0) {
-        console.log('Sync queue is empty');
+      const queueItems = await dbManager.getUnsyncedQueue();
+
+      if (queueItems.length === 0) {
+        console.log('No items in sync queue');
         return;
       }
 
-      console.log(`Processing ${queue.length} items in sync queue...`);
+      console.log(`Processing ${queueItems.length} items from sync queue...`);
 
-      for (const item of queue) {
+      for (const item of queueItems) {
         try {
-          switch (item.operation) {
-            case 'INSERT':
-              await supabaseClient.createTablet(item.data);
-              break;
-            case 'UPDATE':
-              await supabaseClient.updateTablet(item.record_id, item.data);
-              break;
-            case 'DELETE':
-              await supabaseClient.deleteTablet(item.record_id);
-              break;
-          }
-
-          // Mark as synced
+          await this.processSyncQueueItem(item);
           await dbManager.markQueueItemSynced(item.id);
-          console.log(`Queue item ${item.id} processed`);
-
         } catch (error) {
           console.error(`Error processing queue item ${item.id}:`, error);
           
           // Increment retry count
           item.retries = (item.retries || 0) + 1;
           
-          // Remove from queue if too many retries
-          if (item.retries > 5) {
+          // Remove from queue if max retries reached
+          if (item.retries >= 3) {
+            console.log(`Max retries reached for queue item ${item.id}, removing...`);
             await dbManager.removeFromSyncQueue(item.id);
-            console.log(`Queue item ${item.id} removed after ${item.retries} retries`);
           }
         }
       }
+
+      console.log('Sync queue processed successfully');
 
     } catch (error) {
       console.error('Error processing sync queue:', error);
@@ -280,40 +328,75 @@ class SyncManager {
     }
   }
 
-  // Check if tablet exists on server
-  async checkTabletExists(codigoUnico) {
-    try {
-      const tablets = await supabaseClient.getTablets({ search: codigoUnico });
-      return tablets.find(t => t.codigo_unico === codigoUnico);
-    } catch (error) {
-      console.error('Error checking tablet existence:', error);
-      return null;
-    }
-  }
+  // Process individual sync queue item - CORREGIDO CON MANEJO DE DUPLICADOS
+  async processSyncQueueItem(item) {
+    const { operation, table_name, record_id, data } = item;
 
-  // Update sync button UI
-  updateSyncButton(isSyncing) {
-    const syncBtn = document.getElementById('sync-btn');
-    if (syncBtn) {
-      if (isSyncing) {
-        syncBtn.classList.add('syncing');
+    try {
+      switch (operation) {
+        case 'INSERT':
+          // Verificar si ya existe antes de insertar
+          const existing = await this.checkTabletExistsByMultipleFields(data);
+          if (existing) {
+            console.log(`Tablet already exists, updating instead of inserting`);
+            await supabaseClient.updateTablet(existing.id, data);
+          } else {
+            await supabaseClient.createTablet(data);
+          }
+          break;
+
+        case 'UPDATE':
+          await supabaseClient.updateTablet(record_id, data);
+          break;
+
+        case 'DELETE':
+          await supabaseClient.deleteTablet(record_id);
+          break;
+
+        default:
+          console.warn(`Unknown operation: ${operation}`);
+      }
+    } catch (error) {
+      // Si es error de duplicado en INSERT, intentar UPDATE
+      if (error.code === '23505' && operation === 'INSERT') {
+        console.log(`Duplicate key error, attempting update...`);
+        const existing = await this.checkTabletExistsByMultipleFields(data);
+        if (existing) {
+          await supabaseClient.updateTablet(existing.id, data);
+        } else {
+          throw error; // Re-lanzar si no se puede recuperar
+        }
       } else {
-        syncBtn.classList.remove('syncing');
+        throw error; // Re-lanzar otros errores
       }
     }
   }
 
-  // Update sync badge with pending count
+  // Manual sync triggered by user
+  async manualSync() {
+    if (!navigator.onLine) {
+      showToast('No hay conexión a internet', 'warning');
+      return;
+    }
+
+    if (this.isSyncing) {
+      showToast('Sincronización en proceso...', 'info');
+      return;
+    }
+
+    showToast('Iniciando sincronización...', 'info');
+    await this.syncAll();
+  }
+
+  // Update sync badge
   async updateSyncBadge() {
     try {
-      const unsyncedCount = await dbManager.count('tablets');
-      const queueCount = await dbManager.count('syncQueue');
-      const total = unsyncedCount + queueCount;
-
+      const unsyncedCount = (await dbManager.getUnsyncedTablets()).length;
       const badge = document.getElementById('sync-status');
+
       if (badge) {
-        if (total > 0) {
-          badge.textContent = total;
+        if (unsyncedCount > 0) {
+          badge.textContent = unsyncedCount;
           badge.style.display = 'flex';
         } else {
           badge.style.display = 'none';
@@ -323,7 +406,7 @@ class SyncManager {
       // Update stats
       const statPending = document.getElementById('stat-pending');
       if (statPending) {
-        statPending.textContent = total;
+        statPending.textContent = unsyncedCount;
       }
 
     } catch (error) {
@@ -331,13 +414,20 @@ class SyncManager {
     }
   }
 
-  // Manual sync trigger
-  async manualSync() {
-    showToast('Iniciando sincronización...', 'info');
-    await this.syncAll();
+  // Cleanup
+  destroy() {
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+    }
+
+    if (this.realtimeSubscription) {
+      supabaseClient.unsubscribe(this.realtimeSubscription);
+    }
+
+    window.removeEventListener('online', this.handleOnline);
+    window.removeEventListener('offline', this.handleOffline);
   }
 }
 
 // Export singleton
 const syncManager = new SyncManager();
-
