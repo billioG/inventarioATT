@@ -1,3 +1,15 @@
+// Al inicio de app.js, ANTES de la clase TabletInventoryApp
+console.log('=== DIAGNÓSTICO ===');
+console.log('dbManager:', typeof dbManager);
+console.log('supabaseClient:', typeof supabaseClient);
+console.log('authManager:', typeof authManager);
+console.log('ocrManager:', typeof ocrManager);
+console.log('cameraManager:', typeof cameraManager);
+console.log('syncManager:', typeof syncManager);
+console.log('exportManager:', typeof exportManager);
+console.log('===================');
+
+// Luego continúa con la clase TabletInventoryApp...
 
 // Main Application
 class TabletInventoryApp {
