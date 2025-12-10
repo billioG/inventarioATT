@@ -433,20 +433,96 @@
         <div id="toast-container" class="toast-container"></div>
     </div>
 
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-    
-    <script src="js/db.js"></script>
-    <script src="js/supabase-client.js"></script>
-    <script src="js/ocr.js"></script>
-    <script src="js/camera.js"></script>
-    <script src="js/auth.js"></script>
-    <script src="js/sync.js"></script>
-    <script src="js/export.js"></script>
-    <script src="js/app.js"></script>
+      <!-- Scripts -->
+    <script>
+      // Función para cargar scripts con fallback
+      function loadScriptWithFallback(src, fallbackSrc = null) {
+        return new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = src;
+          script.onload = () => {
+            console.log(`✓ Loaded: ${src}`);
+            resolve();
+          };
+          script.onerror = () => {
+            console.warn(`✗ Failed to load: ${src}`);
+            if (fallbackSrc) {
+              console.log(`Trying fallback: ${fallbackSrc}`);
+              const fallbackScript = document.createElement('script');
+              fallbackScript.src = fallbackSrc;
+              fallbackScript.onload = () => {
+                console.log(`✓ Loaded fallback: ${fallbackSrc}`);
+                resolve();
+              };
+              fallbackScript.onerror = () => {
+                console.error(`✗ Failed to load fallback: ${fallbackSrc}`);
+                resolve(); // Continuar sin la librería
+              };
+              document.head.appendChild(fallbackScript);
+            } else {
+              resolve(); // Continuar sin la librería
+            }
+          };
+          document.head.appendChild(script);
+        });
+      }
+
+      // Cargar librerías CDN con fallbacks
+      async function loadLibraries() {
+        console.log('Loading external libraries...');
+        
+        await loadScriptWithFallback(
+          'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+          'https://unpkg.com/@supabase/supabase-js@2'
+        );
+        
+        await loadScriptWithFallback(
+          'https://cdn.jsdelivr.net/npm/tesseract.js@4',
+          'https://unpkg.com/tesseract.js@4'
+        );
+        
+        await loadScriptWithFallback(
+          'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+          'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js'
+        );
+        
+        await loadScriptWithFallback(
+          'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+          'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js'
+        );
+        
+        await loadScriptWithFallback(
+          'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js',
+          'https://unpkg.com/jspdf-autotable@3.5.31/dist/jspdf.plugin.autotable.min.js'
+        );
+
+        console.log('Libraries loaded, starting app...');
+        
+        // Cargar scripts de la aplicación
+        const appScripts = [
+          'js/db.js',
+          'js/supabase-client.js',
+          'js/ocr.js',
+          'js/camera.js',
+          'js/auth.js',
+          'js/sync.js',
+          'js/export.js',
+          'js/app.js'
+        ];
+
+        for (const src of appScripts) {
+          await loadScriptWithFallback(src);
+        }
+      }
+
+      // Iniciar carga
+      loadLibraries().catch(error => {
+        console.error('Error loading libraries:', error);
+        alert('Error al cargar la aplicación. Por favor recarga la página.');
+      });
+    </script>
+</body>
+</html>
+
 </body>
 </html>
