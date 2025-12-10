@@ -3,7 +3,7 @@ class SupabaseClient {
   constructor() {
     // REEMPLAZA ESTOS VALORES CON TUS CREDENCIALES DE SUPABASE
     this.supabaseUrl = 'https://pfshuqbqoqunockrphnm.supabase.co';
-    this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmc2h1cWJxb3F1bm9ja3JwaG5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzM3OTc1NzgsImV4cCI6MjA0OTM3MzU3OH0.lQs-vf3YK8zLqDqfZUYmYDJrNqoQV5iEQNmwS2GXZo4';
+    this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmc2h1cWJxb3F1bm9ja3JwaG5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMjkwODksImV4cCI6MjA4MDkwNTA4OX0.lQW62ETddyyPQLbOHEJ7w6wUZ8qoNvX97gqjV-4GgCQ';
     
     this.client = null;
     this.currentUser = null;
