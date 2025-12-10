@@ -1,4 +1,3 @@
-
 // IndexedDB Manager for Offline Storage
 class DBManager {
   constructor() {
@@ -122,13 +121,20 @@ class DBManager {
     });
   }
 
-  // Get records by index
+  // Get records by index - CORREGIDO
   async getAllByIndex(storeName, indexName, value) {
     return new Promise((resolve, reject) => {
       try {
         const store = this.transaction(storeName);
         const index = store.index(indexName);
-        const request = index.getAll(value);
+        
+        // FIX: Si value es undefined o null, usar getAll() sin parámetros
+        let request;
+        if (value === undefined || value === null) {
+          request = index.getAll();
+        } else {
+          request = index.getAll(value);
+        }
         
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
@@ -240,8 +246,16 @@ class DBManager {
     return this.getAll('tablets');
   }
 
+  // CORREGIDO: getUnsyncedTablets
   async getUnsyncedTablets() {
-    return this.getAllByIndex('tablets', 'synced', false);
+    try {
+      const allTablets = await this.getAllTablets();
+      // Filtrar manualmente en lugar de usar índice con valor booleano
+      return allTablets.filter(tablet => tablet.synced === false || !tablet.synced);
+    } catch (error) {
+      console.error('Error getting unsynced tablets:', error);
+      return [];
+    }
   }
 
   async deleteTablet(id) {
@@ -276,8 +290,15 @@ class DBManager {
     return this.put('syncQueue', queueItem);
   }
 
+  // CORREGIDO: getUnsyncedQueue
   async getUnsyncedQueue() {
-    return this.getAllByIndex('syncQueue', 'synced', false);
+    try {
+      const allQueue = await this.getAll('syncQueue');
+      return allQueue.filter(item => item.synced === false || !item.synced);
+    } catch (error) {
+      console.error('Error getting unsynced queue:', error);
+      return [];
+    }
   }
 
   async markQueueItemSynced(id) {
