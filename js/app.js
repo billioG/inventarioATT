@@ -1220,7 +1220,47 @@ function showToast(message, type = 'info') {
 }
 
 // Initialize app when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-  window.app = new TabletInventoryApp();
-  window.app.init();
-});
+(function() {
+  console.log('=== SCRIPT APP.JS CARGADO ===');
+  console.log('DOM readyState:', document.readyState);
+
+  function startApp() {
+    console.log('=== INICIANDO CREACIÓN DE APP ===');
+    try {
+      window.app = new TabletInventoryApp();
+      console.log('✓ Instancia de app creada');
+      window.app.init();
+    } catch (error) {
+      console.error('❌ Error al iniciar app:', error);
+      console.error('Stack completo:', error.stack);
+      
+      // Mostrar error en pantalla
+      const splash = document.getElementById('splash-screen');
+      if (splash) splash.style.display = 'none';
+      
+      document.body.innerHTML = `
+        <div style="padding: 20px; text-align: center; font-family: Arial;">
+          <h2 style="color: red;">Error al iniciar la aplicación</h2>
+          <p><strong>${error.message}</strong></p>
+          <pre style="text-align: left; background: #f5f5f5; padding: 10px; border-radius: 5px; overflow: auto; max-height: 300px;">${error.stack}</pre>
+          <button onclick="location.reload()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px;">
+            Recargar página
+          </button>
+          <button onclick="localStorage.clear(); indexedDB.deleteDatabase('TabletInventoryDB'); location.reload()" 
+                  style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px; background: red; color: white; border: none;">
+            Limpiar todo y recargar
+          </button>
+        </div>
+      `;
+    }
+  }
+
+  // Esperar a que el DOM esté listo
+  if (document.readyState === 'loading') {
+    console.log('DOM aún cargando, esperando DOMContentLoaded...');
+    document.addEventListener('DOMContentLoaded', startApp);
+  } else {
+    console.log('DOM ya está listo, iniciando inmediatamente...');
+    startApp();
+  }
+})();
