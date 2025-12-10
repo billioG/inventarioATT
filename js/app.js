@@ -32,7 +32,7 @@ class TabletInventoryApp {
       // Initialize sync manager
       syncManager.init();
 
-      // Register service worker - MODIFICADO
+      // Register service worker
       await this.registerServiceWorker();
 
       // Load initial data
@@ -58,16 +58,14 @@ class TabletInventoryApp {
     }
   }
 
-  // Register service worker - CORREGIDO
+  // Register service worker
   async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
-        // Usar la ruta correcta para GitHub Pages
         const swPath = window.location.hostname === 'localhost' ? '/sw.js' : '/inventarioATT/sw.js';
         const registration = await navigator.serviceWorker.register(swPath);
         console.log('Service Worker registered:', registration);
 
-        // Handle updates
         registration.addEventListener('updatefound', () => {
           const newWorker = registration.installing;
           newWorker.addEventListener('statechange', () => {
@@ -79,7 +77,6 @@ class TabletInventoryApp {
 
       } catch (error) {
         console.error('Service Worker registration failed:', error);
-        // No es crítico, continuar sin SW
         console.log('Continuando sin Service Worker...');
       }
     }
@@ -93,7 +90,6 @@ class TabletInventoryApp {
     if (splashScreen) splashScreen.style.display = 'none';
     if (app) app.style.display = 'none';
 
-    // Create login form
     document.body.innerHTML += `
       <div id="login-container" class="login-container">
         <div class="login-card">
@@ -122,7 +118,6 @@ class TabletInventoryApp {
       </div>
     `;
 
-    // Setup login form handler
     const loginForm = document.getElementById('login-form');
     loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -143,7 +138,6 @@ class TabletInventoryApp {
 
       await authManager.signIn(email, password);
 
-      // Reload page to show main app
       window.location.reload();
 
     } catch (error) {
@@ -157,15 +151,12 @@ class TabletInventoryApp {
   // Load data from IndexedDB
   async loadData() {
     try {
-      // Load tablets from IndexedDB
       this.tablets = await dbManager.getAllTablets();
       this.filteredTablets = [...this.tablets];
 
       console.log(`Loaded ${this.tablets.length} tablets from local storage`);
 
-      // If online, sync with server
       if (navigator.onLine) {
-        // No esperar la sincronización, hacerla en background
         syncManager.syncAll().catch(err => {
           console.error('Background sync error:', err);
         });
@@ -240,6 +231,16 @@ class TabletInventoryApp {
       }
     });
 
+    // Estado físico general - show "otro" field
+    document.getElementById('estado_fisico_general')?.addEventListener('change', (e) => {
+      const otroGroup = document.getElementById('estado_fisico_otro_group');
+      if (e.target.value === 'Otro') {
+        otroGroup.style.display = 'block';
+      } else {
+        otroGroup.style.display = 'none';
+      }
+    });
+
     // Battery slider
     const batterySlider = document.getElementById('nivel_bateria_slider');
     const batteryInput = document.getElementById('nivel_bateria');
@@ -273,18 +274,15 @@ class TabletInventoryApp {
 
   // Show view
   showView(viewName) {
-    // Hide all views
     document.querySelectorAll('.view').forEach(view => {
       view.classList.remove('active');
     });
 
-    // Show selected view
     const view = document.getElementById(`${viewName}-view`);
     if (view) {
       view.classList.add('active');
       this.currentView = viewName;
 
-      // Update view-specific content
       if (viewName === 'dashboard') {
         this.renderDashboard();
       } else if (viewName === 'form') {
@@ -295,16 +293,9 @@ class TabletInventoryApp {
 
   // Render dashboard
   async renderDashboard() {
-    // Reload data
     await this.loadData();
-
-    // Update statistics
     this.updateStatistics();
-
-    // Update filter options
     this.updateFilterOptions();
-
-    // Render tablets list
     this.renderTabletsList();
   }
 
@@ -402,6 +393,7 @@ class TabletInventoryApp {
         return 'status-default';
     }
   }
+
   // Show tablet detail
   async showTabletDetail(tabletId) {
     try {
@@ -486,6 +478,7 @@ class TabletInventoryApp {
             <div class="detail-item">
               <label>Estado Físico General</label>
               <p>${tablet.estado_fisico_general || '-'}</p>
+              ${tablet.estado_fisico_otro ? `<p class="detail-note">${tablet.estado_fisico_otro}</p>` : ''}
             </div>
             <div class="detail-item">
               <label>Accesorios</label>
@@ -551,13 +544,11 @@ class TabletInventoryApp {
         </div>
       `;
 
-      // Setup detail buttons
       const editBtn = document.getElementById('edit-tablet-btn');
       const deleteBtn = document.getElementById('delete-tablet-btn');
 
       if (editBtn) {
         editBtn.onclick = () => this.editTablet(tablet.id);
-        // Check permissions
         if (!authManager.canEdit()) {
           editBtn.style.display = 'none';
         }
@@ -565,7 +556,6 @@ class TabletInventoryApp {
 
       if (deleteBtn) {
         deleteBtn.onclick = () => this.deleteTablet(tablet.id);
-        // Check permissions
         if (!authManager.isAdmin()) {
           deleteBtn.style.display = 'none';
         }
@@ -606,20 +596,16 @@ class TabletInventoryApp {
     }
 
     try {
-      // Delete from IndexedDB
       await dbManager.deleteTablet(tabletId);
 
-      // If online, delete from server
       if (navigator.onLine) {
         try {
           await supabaseClient.deleteTablet(tabletId);
         } catch (error) {
           console.error('Error deleting from server:', error);
-          // Add to sync queue
           await dbManager.addToSyncQueue('DELETE', 'tablets', tabletId, null);
         }
       } else {
-        // Add to sync queue
         await dbManager.addToSyncQueue('DELETE', 'tablets', tabletId, null);
       }
 
@@ -636,13 +622,28 @@ class TabletInventoryApp {
   renderForm() {
     const formTitle = document.getElementById('form-title');
     const form = document.getElementById('tablet-form');
+    const codigoInput = document.getElementById('codigo_unico');
 
     if (this.currentTablet) {
       formTitle.textContent = 'Editar Tablet';
       this.populateForm(this.currentTablet);
+      
+      // En modo edición, permitir editar código solo si es admin
+      if (authManager.isAdmin()) {
+        codigoInput.readOnly = false;
+        codigoInput.style.backgroundColor = '#fff';
+      } else {
+        codigoInput.readOnly = true;
+        codigoInput.style.backgroundColor = '#f3f4f6';
+      }
     } else {
       formTitle.textContent = 'Agregar Tablet';
       form.reset();
+      
+      // Generar código automático para nueva tablet
+      codigoInput.value = this.generateTabletCode();
+      codigoInput.readOnly = true;
+      codigoInput.style.backgroundColor = '#f3f4f6';
       
       // Set default date
       const today = new Date().toISOString().split('T')[0];
@@ -675,7 +676,15 @@ class TabletInventoryApp {
     }
 
     document.getElementById('estado_puerto_carga').value = tablet.estado_puerto_carga || '';
+    
+    // Estado físico general con soporte para "Otro"
     document.getElementById('estado_fisico_general').value = tablet.estado_fisico_general || '';
+    
+    if (tablet.estado_fisico_general === 'Otro') {
+      document.getElementById('estado_fisico_otro_group').style.display = 'block';
+      document.getElementById('estado_fisico_otro').value = tablet.estado_fisico_otro || '';
+    }
+    
     document.getElementById('tiene_cargador').checked = tablet.tiene_cargador || false;
     document.getElementById('tiene_cable').checked = tablet.tiene_cable || false;
 
@@ -704,6 +713,7 @@ class TabletInventoryApp {
         estado_pantalla_otro: formData.get('estado_pantalla_otro') || null,
         estado_puerto_carga: formData.get('estado_puerto_carga'),
         estado_fisico_general: formData.get('estado_fisico_general'),
+        estado_fisico_otro: formData.get('estado_fisico_otro') || null,
         tiene_cargador: formData.get('tiene_cargador') === 'on',
         tiene_cable: formData.get('tiene_cable') === 'on',
         observaciones: formData.get('observaciones') || null,
@@ -720,8 +730,10 @@ class TabletInventoryApp {
         // If online, update on server
         if (navigator.onLine) {
           try {
-            await supabaseClient.updateTablet(tabletData.id, tabletData);
+            const serverTablet = await supabaseClient.updateTablet(tabletData.id, tabletData);
+            // Marcar como sincronizado después de éxito
             tabletData.synced = true;
+            tabletData.last_synced_at = new Date().toISOString();
             await dbManager.saveTablet(tabletData);
           } catch (error) {
             console.error('Error updating on server:', error);
@@ -742,8 +754,10 @@ class TabletInventoryApp {
         if (navigator.onLine) {
           try {
             const serverTablet = await supabaseClient.createTablet(tabletData);
+            // Usar el ID del servidor y marcar como sincronizado
             tabletData.id = serverTablet.id;
             tabletData.synced = true;
+            tabletData.last_synced_at = new Date().toISOString();
             await dbManager.saveTablet(tabletData);
           } catch (error) {
             console.error('Error creating on server:', error);
@@ -758,7 +772,7 @@ class TabletInventoryApp {
       }
 
       // Update sync badge
-      syncManager.updateSyncBadge();
+      await syncManager.updateSyncBadge();
 
       // Go back to dashboard
       this.showView('dashboard');
@@ -783,10 +797,8 @@ class TabletInventoryApp {
     try {
       const photoBlob = cameraManager.capturePhoto();
       
-      // Stop camera
       cameraManager.stop();
 
-      // Process with OCR
       await this.processOCR(photoBlob);
 
     } catch (error) {
@@ -808,7 +820,7 @@ class TabletInventoryApp {
     }
   }
 
-  // Process OCR - CORREGIDO
+  // Process OCR
   async processOCR(imageSource) {
     try {
       // Show preview
@@ -827,10 +839,7 @@ class TabletInventoryApp {
       // Process with OCR
       const extractedInfo = await ocrManager.processImage(imageSource);
 
-      // Populate form fields
-      if (extractedInfo.codigo_unico) {
-        document.getElementById('codigo_unico').value = extractedInfo.codigo_unico;
-      }
+      // Populate form fields (no sobrescribir código único automático)
       if (extractedInfo.modelo) {
         document.getElementById('modelo').value = extractedInfo.modelo;
       }
@@ -983,7 +992,6 @@ class TabletInventoryApp {
       if (userName) userName.textContent = profile.full_name || profile.email;
       if (userRole) userRole.textContent = this.getRoleLabel(profile.role);
 
-      // Show/hide elements based on role
       this.updateRoleBasedUI(profile.role);
     }
   }
@@ -1043,6 +1051,21 @@ class TabletInventoryApp {
     });
   }
 
+  // Utility: Generate Tablet Code
+  generateTabletCode() {
+    // Formato: TAB-YYYYMMDD-XXXX (TAB-20251209-0001)
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const dateStr = `${year}${month}${day}`;
+    
+    // Generar un número aleatorio de 4 dígitos
+    const random = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+    
+    return `TAB-${dateStr}-${random}`;
+  }
+
   // Format date
   formatDate(dateString) {
     if (!dateString) return '-';
@@ -1069,10 +1092,8 @@ function showToast(message, type = 'info') {
 
   container.appendChild(toast);
 
-  // Trigger animation
   setTimeout(() => toast.classList.add('show'), 10);
 
-  // Remove after 3 seconds
   setTimeout(() => {
     toast.classList.remove('show');
     setTimeout(() => toast.remove(), 300);
