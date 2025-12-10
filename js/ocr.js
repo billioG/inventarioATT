@@ -1,4 +1,3 @@
-
 // OCR Manager using Tesseract.js
 class OCRManager {
   constructor() {
@@ -6,35 +5,49 @@ class OCRManager {
     this.isProcessing = false;
   }
 
-  // Initialize Tesseract worker
+  // Initialize Tesseract worker - CORREGIDO
   async init() {
     try {
       if (!this.worker) {
-        this.worker = await Tesseract.createWorker('spa', 1, {
+        console.log('Initializing Tesseract worker...');
+        
+        // Usar createWorker con configuración básica
+        this.worker = await Tesseract.createWorker({
           logger: (m) => {
             if (m.status === 'recognizing text') {
               this.updateProgress(m.progress);
             }
           }
         });
-        console.log('OCR worker initialized');
+        
+        // Cargar e inicializar el idioma español
+        await this.worker.loadLanguage('spa');
+        await this.worker.initialize('spa');
+        
+        console.log('OCR worker initialized successfully');
       }
       return this.worker;
     } catch (error) {
       console.error('OCR initialization error:', error);
-      throw error;
+      // No lanzar error, permitir que la app funcione sin OCR
+      showToast('No se pudo inicializar OCR. Completa los campos manualmente.', 'warning');
+      return null;
     }
   }
 
-  // Process image and extract text
+  // Process image and extract text - CORREGIDO
   async processImage(imageSource) {
     try {
       this.isProcessing = true;
-      this.showStatus('Procesando imagen...');
+      this.showStatus('Procesando imagen con OCR...');
 
-      await this.init();
+      const worker = await this.init();
+      
+      if (!worker) {
+        throw new Error('No se pudo inicializar el OCR');
+      }
 
-      const { data } = await this.worker.recognize(imageSource);
+      const { data } = await worker.recognize(imageSource);
       
       this.isProcessing = false;
       this.hideStatus();
@@ -44,7 +57,17 @@ class OCRManager {
       this.isProcessing = false;
       this.hideStatus();
       console.error('OCR processing error:', error);
-      throw error;
+      
+      // Devolver objeto vacío en lugar de lanzar error
+      showToast('Error en OCR. Por favor completa los campos manualmente.', 'warning');
+      return {
+        nombre_producto: null,
+        numero_modelo: null,
+        numero_serie: null,
+        version_android: null,
+        modelo: null,
+        codigo_unico: null
+      };
     }
   }
 
@@ -54,7 +77,9 @@ class OCRManager {
       nombre_producto: null,
       numero_modelo: null,
       numero_serie: null,
-      version_android: null
+      version_android: null,
+      modelo: null,
+      codigo_unico: null
     };
 
     console.log('OCR Text:', text);
