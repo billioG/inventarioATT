@@ -10,52 +10,130 @@ class TabletInventoryApp {
   // Initialize application
   async init() {
     try {
-      console.log('Initializing Tablet Inventory App...');
+      console.log('=== INICIANDO APP ===');
+      
+      // Agregar timeout de seguridad
+      this.forceHideSplashAfterTimeout();
+      
+      console.log('1. Initializing Tablet Inventory App...');
 
       // Initialize IndexedDB
+      console.log('2. Inicializando IndexedDB...');
       await dbManager.init();
+      console.log('✓ IndexedDB inicializado');
 
       // Initialize Supabase
-      supabaseClient.init();
+      console.log('3. Inicializando Supabase...');
+      const supabaseInitialized = supabaseClient.init();
+      console.log('✓ Supabase inicializado:', supabaseInitialized ? 'Sí' : 'No (modo offline)');
 
       // Initialize authentication
+      console.log('4. Verificando autenticación...');
       const isAuthenticated = await authManager.init();
+      console.log('✓ Estado autenticación:', isAuthenticated);
 
       if (!isAuthenticated) {
+        console.log('5. Usuario no autenticado, mostrando login...');
+        this.hideSplashScreen();
         this.showLoginPage();
         return;
       }
 
+      console.log('5. Usuario autenticado, continuando...');
+
       // Setup auth listener
+      console.log('6. Configurando auth listener...');
       authManager.setupAuthListener();
+      console.log('✓ Auth listener configurado');
 
       // Initialize sync manager
+      console.log('7. Inicializando sync manager...');
       syncManager.init();
+      console.log('✓ Sync manager inicializado');
 
       // Register service worker
+      console.log('8. Registrando service worker...');
       await this.registerServiceWorker();
+      console.log('✓ Service worker registrado');
 
       // Load initial data
+      console.log('9. Cargando datos iniciales...');
       await this.loadData();
+      console.log('✓ Datos cargados');
 
       // Setup UI event listeners
+      console.log('10. Configurando event listeners...');
       this.setupEventListeners();
+      console.log('✓ Event listeners configurados');
 
       // Hide splash screen
+      console.log('11. Ocultando splash screen...');
       this.hideSplashScreen();
+      console.log('✓ Splash screen oculto');
 
       // Show app
+      console.log('12. Mostrando app...');
       this.showApp();
+      console.log('✓ App mostrada');
 
       // Update UI
+      console.log('13. Actualizando UI...');
       this.updateUI();
+      console.log('✓ UI actualizada');
 
-      console.log('App initialized successfully');
+      console.log('=== APP INICIALIZADA CORRECTAMENTE ===');
 
     } catch (error) {
-      console.error('App initialization error:', error);
-      showToast('Error al inicializar la aplicación: ' + error.message, 'error');
+      console.error('❌ ERROR EN INICIALIZACIÓN:', error);
+      console.error('Stack:', error.stack);
+      
+      // Ocultar splash y mostrar error
+      this.hideSplashScreen();
+      
+      document.body.innerHTML = `
+        <div style="padding: 20px; text-align: center; font-family: Arial;">
+          <h2 style="color: red;">Error al inicializar la aplicación</h2>
+          <p>${error.message}</p>
+          <pre style="text-align: left; background: #f5f5f5; padding: 10px; border-radius: 5px; overflow: auto;">${error.stack}</pre>
+          <button onclick="location.reload()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px;">
+            Recargar página
+          </button>
+          <button onclick="localStorage.clear(); indexedDB.deleteDatabase('TabletInventoryDB'); location.reload()" 
+                  style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px; background: red; color: white; border: none;">
+            Limpiar todo y recargar
+          </button>
+        </div>
+      `;
     }
+  }
+
+  // Force hide splash screen after timeout
+  forceHideSplashAfterTimeout() {
+    setTimeout(() => {
+      const splash = document.getElementById('splash-screen');
+      if (splash && splash.style.display !== 'none') {
+        console.warn('⚠️ Forzando ocultamiento de splash screen por timeout');
+        this.hideSplashScreen();
+        
+        // Si hay error, mostrar mensaje
+        const appElement = document.getElementById('app');
+        if (!appElement || !appElement.style.display || appElement.style.display === 'none') {
+          document.body.innerHTML = `
+            <div style="padding: 20px; text-align: center; font-family: Arial;">
+              <h2>La aplicación tardó demasiado en cargar</h2>
+              <p>Revisa la consola (F12) para ver los errores.</p>
+              <button onclick="location.reload()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px;">
+                Recargar página
+              </button>
+              <button onclick="localStorage.clear(); indexedDB.deleteDatabase('TabletInventoryDB'); location.reload()" 
+                      style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px; background: red; color: white; border: none;">
+                Limpiar todo y recargar
+              </button>
+            </div>
+          `;
+        }
+      }
+    }, 10000); // 10 segundos
   }
 
   // Register service worker
@@ -156,7 +234,7 @@ class TabletInventoryApp {
 
       console.log(`Loaded ${this.tablets.length} tablets from local storage`);
 
-      if (navigator.onLine) {
+      if (navigator.onLine && supabaseClient.isAvailable()) {
         syncManager.syncAll().catch(err => {
           console.error('Background sync error:', err);
         });
@@ -598,7 +676,7 @@ class TabletInventoryApp {
     try {
       await dbManager.deleteTablet(tabletId);
 
-      if (navigator.onLine) {
+      if (navigator.onLine && supabaseClient.isAvailable()) {
         try {
           await supabaseClient.deleteTablet(tabletId);
         } catch (error) {
@@ -728,7 +806,7 @@ class TabletInventoryApp {
         await dbManager.saveTablet(tabletData);
 
         // If online, update on server
-        if (navigator.onLine) {
+        if (navigator.onLine && supabaseClient.isAvailable()) {
           try {
             const serverTablet = await supabaseClient.updateTablet(tabletData.id, tabletData);
             // Marcar como sincronizado después de éxito
@@ -765,7 +843,7 @@ class TabletInventoryApp {
         }
 
         // If online, create on server
-        if (navigator.onLine) {
+        if (navigator.onLine && supabaseClient.isAvailable()) {
           try {
             const serverTablet = await supabaseClient.createTablet(tabletData);
             // Usar el ID del servidor y marcar como sincronizado
@@ -823,7 +901,6 @@ class TabletInventoryApp {
       showToast('Error al guardar tablet: ' + error.message, 'error');
     }
   }
-
 
   // Start camera
   async startCamera() {
@@ -1072,7 +1149,7 @@ class TabletInventoryApp {
         setTimeout(() => {
           splash.style.display = 'none';
         }, 300);
-      }, 1000);
+      }, 500);
     }
   }
 
@@ -1144,6 +1221,6 @@ function showToast(message, type = 'info') {
 
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-  const app = new TabletInventoryApp();
-  app.init();
+  window.app = new TabletInventoryApp();
+  window.app.init();
 });
