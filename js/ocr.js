@@ -1,149 +1,128 @@
-// js/ocr.js - Lógica corregida según tus instrucciones exactas
 class OCRManager {
   constructor() {
     this.worker = null;
-    this.isProcessing = false;
   }
 
   async init() {
-    try {
-      if (!this.worker) {
-        // Inicializar Tesseract
-        this.worker = await Tesseract.createWorker();
-        await this.worker.loadLanguage('spa');
-        await this.worker.initialize('spa');
-      }
-      return this.worker;
-    } catch (error) {
-      console.error('OCR Init Error:', error);
-      showToast('No se pudo iniciar el escáner visual', 'warning');
-      return null;
+    if (!this.worker) {
+      this.worker = await Tesseract.createWorker();
+      await this.worker.loadLanguage('spa');
+      await this.worker.initialize('spa');
     }
+    return this.worker;
   }
 
   async processImage(imageSource) {
     try {
-      this.isProcessing = true;
-      this.showStatus('Leyendo datos de la imagen...');
-
+      this.showStatus('Analizando imagen...');
       const worker = await this.init();
-      if (!worker) return this.getEmptyInfo();
-
       const { data } = await worker.recognize(imageSource);
-      
-      this.isProcessing = false;
       this.hideStatus();
-
-      return this.parseTabletInfo(data.text);
+      return this.parseInfo(data.text);
     } catch (error) {
-      this.isProcessing = false;
       this.hideStatus();
-      console.error('OCR Process Error:', error);
-      showToast('No se pudieron extraer datos. Intenta con otra foto.', 'error');
-      return this.getEmptyInfo();
+      console.error(error);
+      return {};
     }
   }
 
-  getEmptyInfo() {
-    return {
+  // --- CORRECCIÓN: Lógica de extracción estricta ---
+  parseInfo(text) {
+    const info = {
       nombre_producto: null,
       numero_modelo: null,
       numero_serie: null,
       version_android: null,
-      modelo: null,
-      codigo_unico: null
+      modelo: null
     };
-  }
 
-  parseTabletInfo(text) {
-    const info = this.getEmptyInfo();
-    console.log('Texto escaneado:', text);
-
-    // Limpiar el texto y dividir por líneas
-    const lines = text.split('\n')
-      .map(l => l.trim())
-      .filter(l => l.length > 0);
+    console.log('OCR Texto Crudo:', text);
+    
+    // Limpiar líneas vacías
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 1);
 
     for (let i = 0; i < lines.length; i++) {
-      const lineOriginal = lines[i];
-      const line = lineOriginal.toLowerCase();
+      const line = lines[i].toLowerCase();
+      const original = lines[i];
 
-      // REGLA 1: Número de serie
-      // Busca "Número de serie" o "Serie"
-      if (line.includes('número de serie') || line.startsWith('serie')) {
+      // 1. NOMBRE DEL PRODUCTO (Galaxy Tab...)
+      // Buscamos "Nombre del producto" y tomamos la siguiente línea o el valor después de :
+      if (line.includes('nombre del producto')) {
         let val = this.extractValue(lines, i);
         if (val) {
-          // Eliminar espacios (ej: "R 5 X" -> "R5X")
-          info.numero_serie = val.replace(/\s+/g, '').toUpperCase();
+            info.nombre_producto = val;
+            // REGLA: El mismo nombre va a número de modelo (según tu petición)
+            info.numero_modelo = val; 
         }
       }
 
-      // REGLA 2: Modelo
-      // Busca "Nombre del modelo" o "Modelo" (ignorando "número de modelo")
-      else if ((line.includes('nombre del modelo') || line.startsWith('modelo')) && !line.includes('número')) {
-        info.modelo = this.extractValue(lines, i);
-      }
-
-      // REGLA 3: Nombre del producto
-      // Este valor va en 'nombre_producto' Y en 'numero_modelo' como pediste
-      else if (line.includes('nombre del producto')) {
+      // 2. NÚMERO DE SERIE
+      // Buscamos "Número de serie" o "Serie"
+      else if (line.includes('número de serie') || line.startsWith('serie')) {
         let val = this.extractValue(lines, i);
         if (val) {
-          info.nombre_producto = val;
-          info.numero_modelo = val; // <--- Se copia al número de modelo
+            // Eliminar espacios (R 9 W T -> R9WT)
+            info.numero_serie = val.replace(/\s+/g, '').toUpperCase();
         }
+      }
+
+      // 3. MODELO (SM-T...)
+      // Buscamos "Modelo" o "Nombre del modelo" (evitando "número de modelo")
+      else if ((line.includes('modelo') || line.includes('nombre del modelo')) && !line.includes('número')) {
+         info.modelo = this.extractValue(lines, i);
+      }
+      
+      // 4. Fallback para Android
+      else if (line.includes('android')) {
+          const m = original.match(/Android\s+(\d+)/i);
+          if (m) info.version_android = m[1];
       }
     }
 
-    // Fallbacks (Solo si falló lo anterior)
+    // --- Fallbacks si no encontró etiquetas ---
     if (!info.numero_serie) {
-      // Patrón Samsung: R seguido de 9-11 caracteres
-      const match = text.match(/\b(R[A-Z0-9]{9,11})\b/i);
-      if (match) info.numero_serie = match[0].toUpperCase();
+        // Patrón Samsung Serial: R seguido de 9 a 11 caracteres alfanuméricos
+        const match = text.match(/\b(R[A-Z0-9]{9,11})\b/i);
+        if (match) info.numero_serie = match[0].toUpperCase();
     }
-
+    
     if (!info.nombre_producto) {
-       // Buscar Galaxy Tab si no se encontró etiqueta
-       const match = text.match(/Galaxy\s+Tab\s+[A-Z0-9\s]+/i);
-       if (match) {
-         info.nombre_producto = match[0].trim();
-         if (!info.numero_modelo) info.numero_modelo = match[0].trim();
-       }
+        // Buscar "Galaxy Tab" directamente
+        const match = text.match(/Galaxy\s+Tab\s+[A-Z0-9\s]+/i);
+        if (match) {
+            info.nombre_producto = match[0].trim();
+            info.numero_modelo = match[0].trim();
+        }
     }
 
-    console.log('Datos extraídos finales:', info);
     return info;
   }
 
-  // Utilidad para sacar el valor de la misma línea (después de :) o la siguiente
+  // Extrae valor después de ":" o de la siguiente línea
   extractValue(lines, index) {
     const line = lines[index];
-    // Si tiene dos puntos, tomar lo de la derecha
     if (line.includes(':')) {
-      return line.split(':')[1].trim();
+        const parts = line.split(':');
+        if (parts[1] && parts[1].trim().length > 0) return parts[1].trim();
     }
-    // Si no, tomar la línea siguiente si existe
+    // Si no hay valor en la misma línea, mirar la siguiente
     if (index + 1 < lines.length) {
-      return lines[index + 1].trim();
+        return lines[index + 1].trim();
     }
     return null;
   }
 
-  // Helpers visuales
-  updateProgress(p) { /* Opcional: implementar si quieres barra de progreso */ }
-  
   showStatus(msg) {
-    const container = document.getElementById('ocr-status');
-    const text = document.getElementById('ocr-status-text');
-    if (container && text) {
-      text.innerText = msg;
-      container.style.display = 'flex';
+    const el = document.getElementById('ocr-status');
+    if(el) { 
+        el.style.display='flex'; 
+        const txt = document.getElementById('ocr-status-text');
+        if(txt) txt.textContent=msg; 
     }
   }
-
   hideStatus() {
-    const container = document.getElementById('ocr-status');
-    if (container) container.style.display = 'none';
+    const el = document.getElementById('ocr-status');
+    if(el) el.style.display='none';
   }
 }
 
