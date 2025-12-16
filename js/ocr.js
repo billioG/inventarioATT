@@ -5,13 +5,12 @@ class OCRManager {
     this.isProcessing = false;
   }
 
-  // Initialize Tesseract worker - CORREGIDO
+  // Initialize Tesseract worker
   async init() {
     try {
       if (!this.worker) {
         console.log('Initializing Tesseract worker...');
         
-        // Usar createWorker con configuración básica
         this.worker = await Tesseract.createWorker({
           logger: (m) => {
             if (m.status === 'recognizing text') {
@@ -20,7 +19,6 @@ class OCRManager {
           }
         });
         
-        // Cargar e inicializar el idioma español
         await this.worker.loadLanguage('spa');
         await this.worker.initialize('spa');
         
@@ -29,13 +27,12 @@ class OCRManager {
       return this.worker;
     } catch (error) {
       console.error('OCR initialization error:', error);
-      // No lanzar error, permitir que la app funcione sin OCR
       showToast('No se pudo inicializar OCR. Completa los campos manualmente.', 'warning');
       return null;
     }
   }
 
-  // Process image and extract text - CORREGIDO
+  // Process image and extract text
   async processImage(imageSource) {
     try {
       this.isProcessing = true;
@@ -58,7 +55,6 @@ class OCRManager {
       this.hideStatus();
       console.error('OCR processing error:', error);
       
-      // Devolver objeto vacío en lugar de lanzar error
       showToast('Error en OCR. Por favor completa los campos manualmente.', 'warning');
       return {
         nombre_producto: null,
@@ -71,7 +67,7 @@ class OCRManager {
     }
   }
 
-  // Parse extracted text to find tablet information
+  // Parse extracted text to find tablet information - MEJORADO
   parseTabletInfo(text) {
     const info = {
       nombre_producto: null,
@@ -82,88 +78,77 @@ class OCRManager {
       codigo_unico: null
     };
 
-    console.log('OCR Text:', text);
+    console.log('OCR Raw Text:', text);
 
-    // Clean text
-    const cleanText = text.replace(/\s+/g, ' ').trim();
-    const lines = text.split('\n').map(line => line.trim());
+    // Dividir por líneas y limpiar espacios extra
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
 
-    // Extract product name (Galaxy Tab, etc)
-    const productMatch = cleanText.match(/Galaxy\s+Tab\s+[A-Z0-9\s]+/i);
-    if (productMatch) {
-      info.nombre_producto = productMatch[0].trim();
-    }
-
-    // Extract model number (SM-XXXX)
-    const modelMatch = cleanText.match(/SM-[A-Z0-9]+/i);
-    if (modelMatch) {
-      info.numero_modelo = modelMatch[0].toUpperCase();
-      // Use model as codigo_unico if not found separately
-      if (!info.codigo_unico) {
-        info.codigo_unico = modelMatch[0].toUpperCase();
-      }
-    }
-
-    // Extract serial number (R + alphanumeric)
-    const serialMatch = cleanText.match(/R[A-Z0-9]{10,}/i);
-    if (serialMatch) {
-      info.numero_serie = serialMatch[0].toUpperCase();
-    }
-
-    // Alternative serial number patterns
-    if (!info.numero_serie) {
-      const altSerialMatch = cleanText.match(/[0-9A-Z]{12,}/);
-      if (altSerialMatch) {
-        info.numero_serie = altSerialMatch[0].toUpperCase();
-      }
-    }
-
-    // Extract Android version
-    const androidMatch = cleanText.match(/Android\s+(\d+(\.\d+)?)/i);
-    if (androidMatch) {
-      info.version_android = androidMatch[1];
-    }
-
-    // Try to find model in lines starting with "Nombre del modelo"
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].toLowerCase();
-      
-      if (line.includes('nombre del producto') || line.includes('product name')) {
-        if (lines[i + 1]) {
-          info.nombre_producto = lines[i + 1].trim();
+      const line = lines[i];
+      const lineLower = line.toLowerCase();
+
+      // 1. EXTRAER MODELO / NOMBRE PRODUCTO
+      // Buscar líneas que contengan "Nombre del modelo" o "Modelo" (y evitar "número de modelo" si queremos solo el nombre)
+      if ((lineLower.includes('nombre del modelo') || lineLower.includes('modelo')) && !lineLower.includes('número')) {
+        let value = '';
+        if (line.includes(':')) {
+          value = line.split(':')[1].trim();
+        } else if (i + 1 < lines.length) {
+          // Si no tiene dos puntos, asumir que el valor está en la siguiente línea
+          value = lines[i + 1].trim();
+        }
+
+        if (value) {
+          info.modelo = value;
+          info.nombre_producto = value; // Copiar al nombre de producto
+          info.numero_modelo = value;   // Copiar al número de modelo también por si acaso
         }
       }
-      
-      if (line.includes('nombre del modelo') || line.includes('model name')) {
-        if (lines[i + 1]) {
-          info.numero_modelo = lines[i + 1].trim();
+
+      // 2. EXTRAER NÚMERO DE SERIE / SERIE
+      if (lineLower.includes('número de serie') || lineLower.includes('serie')) {
+        let value = '';
+        if (line.includes(':')) {
+          value = line.split(':')[1].trim();
+        } else if (i + 1 < lines.length) {
+          value = lines[i + 1].trim();
+        }
+
+        if (value) {
+           // Limpiar espacios internos (ej: "R9 W T..." -> "R9WT...")
+           info.numero_serie = value.replace(/\s+/g, '').toUpperCase();
         }
       }
-      
-      if (line.includes('número de modelo') || line.includes('model number')) {
-        if (lines[i + 1]) {
-          info.numero_modelo = lines[i + 1].trim().toUpperCase();
-        }
-      }
-      
-      if (line.includes('número de serie') || line.includes('serial number')) {
-        if (lines[i + 1]) {
-          info.numero_serie = lines[i + 1].trim().toUpperCase();
+
+      // 3. EXTRAER VERSIÓN ANDROID
+      if (lineLower.includes('android')) {
+        const match = line.match(/Android\s+(\d+(\.\d+)?)/i);
+        if (match) {
+          info.version_android = match[1];
         }
       }
     }
 
-    // Generate modelo from nombre_producto if not found
-    if (!info.modelo && info.nombre_producto) {
-      info.modelo = info.nombre_producto;
+    // --- FALLBACKS (Plan B si no encuentra etiquetas exactas) ---
+
+    // Fallback: Buscar patrón de serie Samsung (R + alfanuméricos)
+    if (!info.numero_serie) {
+      const serialPattern = /\b(R[A-Z0-9]{9,11})\b/i;
+      const match = text.match(serialPattern);
+      if (match) info.numero_serie = match[0].toUpperCase();
     }
 
-    // Use numero_modelo as modelo if modelo not found
-    if (!info.modelo && info.numero_modelo) {
-      info.modelo = info.numero_modelo;
+    // Fallback: Buscar patrón de modelo SM-XXXX
+    if (!info.modelo) {
+      const modelPattern = /SM-[A-Z0-9]+/i;
+      const matchModel = text.match(modelPattern);
+      if (matchModel) {
+        info.modelo = matchModel[0].toUpperCase();
+        info.numero_modelo = matchModel[0].toUpperCase();
+      }
     }
 
-    console.log('Parsed info:', info);
+    console.log('OCR Info Extraída:', info);
     return info;
   }
 
