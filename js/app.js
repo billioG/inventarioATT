@@ -827,3 +827,562 @@ async function viewHistory() {
         document.head.appendChild(style);
     }
 }
+
+// Abrir cámara para foto normal
+async function openCamera() {
+    const modal = document.getElementById('cameraModal');
+    const video = document.getElementById('cameraVideo');
+    const canvas = document.getElementById('cameraCanvas');
+    const ocrResult = document.getElementById('ocrResult');
+
+    ocrResult.classList.add('hidden');
+    
+    const result = await CameraManager.initialize(video, canvas);
+
+    if (!result.success) {
+        showToast('Error accediendo a la cámara: ' + result.error, 'error');
+        return;
+    }
+
+    modal.classList.add('active');
+}
+
+// Abrir cámara para OCR
+async function openCameraForOCR() {
+    const modal = document.getElementById('cameraModal');
+    const video = document.getElementById('cameraVideo');
+    const canvas = document.getElementById('cameraCanvas');
+    
+    const result = await CameraManager.initialize(video, canvas);
+
+    if (!result.success) {
+        showToast('Error accediendo a la cámara: ' + result.error, 'error');
+        return;
+    }
+
+    modal.classList.add('active');
+    modal.dataset.ocrMode = 'true';
+}
+
+// Capturar foto
+async function capturePhoto() {
+    const modal = document.getElementById('cameraModal');
+    const isOCRMode = modal.dataset.ocrMode === 'true';
+
+    if (isOCRMode) {
+        await captureAndProcessOCR();
+    } else {
+        const result = await CameraManager.capture();
+
+        if (!result.success) {
+            showToast('Error capturando foto', 'error');
+            return;
+        }
+
+        // Convertir blob a file
+        const file = ImageHandler.blobToFile(result.blob, `photo_${Date.now()}.jpg`);
+
+        // Agregar a fotos actuales
+        currentPhotos.push({
+            file: file,
+            url: result.url,
+            isExisting: false
+        });
+
+        renderPhotoPreview();
+        closeCameraModal();
+        showToast('Foto capturada correctamente', 'success');
+    }
+}
+
+// Capturar y procesar con OCR
+async function captureAndProcessOCR() {
+    showLoader('Procesando imagen con OCR...');
+
+    const result = await CameraManager.captureAndExtractInfo();
+
+    hideLoader();
+
+    if (!result.success) {
+        showToast('Error procesando imagen', 'error');
+        return;
+    }
+
+    if (!result.ocr.success) {
+        showToast('Error en OCR: ' + result.ocr.error, 'error');
+        return;
+    }
+
+    // Mostrar resultados del OCR
+    const ocrResultDiv = document.getElementById('ocrResult');
+    const ocrText = document.getElementById('ocrText');
+
+    const data = result.ocr.data;
+    
+    ocrText.innerHTML = `
+        <div class="ocr-data">
+            ${data.nombreProducto ? `<div><strong>Nombre del Producto:</strong> ${data.nombreProducto}</div>` : ''}
+            ${data.modelo ? `<div><strong>Modelo:</strong> ${data.modelo}</div>` : ''}
+            ${data.numeroSerie ? `<div><strong>Número de Serie:</strong> ${data.numeroSerie}</div>` : ''}
+            ${data.nivelBateria !== null ? `<div><strong>Nivel de Batería:</strong> ${data.nivelBateria}%</div>` : ''}
+            ${data.versionAndroid ? `<div><strong>Versión Android:</strong> ${data.versionAndroid}</div>` : ''}
+        </div>
+        <div class="ocr-raw-text">
+            <h4>Texto Completo Detectado:</h4>
+            <pre>${result.ocr.rawText}</pre>
+        </div>
+    `;
+
+    ocrResultDiv.classList.remove('hidden');
+
+    // Guardar datos de OCR temporalmente
+    window.ocrExtractedData = data;
+
+    // Agregar estilos para OCR
+    if (!document.getElementById('ocrStyles')) {
+        const style = document.createElement('style');
+        style.id = 'ocrStyles';
+        style.textContent = `
+            .ocr-data {
+                background: white;
+                padding: 1rem;
+                border-radius: 8px;
+                margin-bottom: 1rem;
+            }
+            .ocr-data > div {
+                padding: 0.5rem 0;
+                border-bottom: 1px solid var(--border-color);
+            }
+            .ocr-data > div:last-child {
+                border-bottom: none;
+            }
+            .ocr-raw-text {
+                margin-top: 1rem;
+            }
+            .ocr-raw-text h4 {
+                color: var(--text-secondary);
+                font-size: 0.875rem;
+                margin-bottom: 0.5rem;
+            }
+            .ocr-raw-text pre {
+                background: white;
+                padding: 1rem;
+                border-radius: 8px;
+                font-size: 0.75rem;
+                max-height: 150px;
+                overflow-y: auto;
+                white-space: pre-wrap;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // También guardar la foto
+    const file = ImageHandler.blobToFile(result.image.blob, `ocr_photo_${Date.now()}.jpg`);
+    currentPhotos.push({
+        file: file,
+        url: result.image.url,
+        isExisting: false
+    });
+
+    renderPhotoPreview();
+}
+
+// Aplicar datos de OCR al formulario
+function applyOCRData() {
+    if (!window.ocrExtractedData) {
+        showToast('No hay datos de OCR para aplicar', 'error');
+        return;
+    }
+
+    const data = window.ocrExtractedData;
+
+    // Aplicar cada campo si tiene valor
+    if (data.nombreProducto) {
+        document.getElementById('nombreProducto').value = data.nombreProducto;
+    }
+    
+    if (data.modelo) {
+        document.getElementById('modelo').value = data.modelo;
+    }
+    
+    if (data.numeroSerie) {
+        document.getElementById('numeroSerie').value = data.numeroSerie;
+    }
+    
+    if (data.nivelBateria !== null) {
+        const bateria = data.nivelBateria;
+        document.getElementById('nivelBateria').value = bateria;
+        document.getElementById('nivelBateriaNum').value = bateria;
+        document.querySelector('.battery-percentage').textContent = `${bateria}%`;
+    }
+    
+    if (data.versionAndroid) {
+        document.getElementById('versionAndroid').value = data.versionAndroid;
+    }
+
+    closeCameraModal();
+    showToast('Datos aplicados al formulario', 'success');
+}
+
+// Cerrar modal de cámara
+function closeCameraModal() {
+    const modal = document.getElementById('cameraModal');
+    const ocrResult = document.getElementById('ocrResult');
+    
+    CameraManager.stop();
+    modal.classList.remove('active');
+    modal.dataset.ocrMode = 'false';
+    ocrResult.classList.add('hidden');
+    window.ocrExtractedData = null;
+}
+
+// Manejar selección de archivos desde galería
+async function handleFileSelect(e) {
+    const files = Array.from(e.target.files);
+    
+    if (files.length === 0) return;
+
+    showLoader('Procesando imágenes...');
+
+    const processed = await ImageHandler.processMultipleFiles(files);
+
+    hideLoader();
+
+    // Agregar a fotos actuales
+    processed.forEach(p => {
+        currentPhotos.push({
+            file: p.resized,
+            url: p.url,
+            isExisting: false
+        });
+    });
+
+    renderPhotoPreview();
+    showToast(`${processed.length} foto(s) agregada(s)`, 'success');
+
+    // Limpiar input
+    e.target.value = '';
+}
+
+// Renderizar preview de fotos
+function renderPhotoPreview() {
+    const container = document.getElementById('photoPreview');
+
+    if (currentPhotos.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary); text-align: center;">No hay fotos agregadas</p>';
+        return;
+    }
+
+    container.innerHTML = currentPhotos.map((photo, index) => `
+        <div class="photo-item">
+            <img src="${photo.url}" alt="Foto ${index + 1}">
+            <button class="photo-remove" onclick="removePhoto(${index})" type="button">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+// Eliminar foto
+function removePhoto(index) {
+    const photo = currentPhotos[index];
+    
+    // Si es una foto existente, marcarla para eliminación
+    if (photo.isExisting) {
+        // Aquí podrías agregar lógica para eliminar de Storage si lo deseas
+        // await PhotoManager.deletePhoto(PhotoManager.getPhotoPath(photo.url));
+    }
+
+    currentPhotos.splice(index, 1);
+    renderPhotoPreview();
+    showToast('Foto eliminada', 'info');
+}
+
+// Sincronización
+async function handleSync() {
+    if (!AppState.isOnline) {
+        showToast('Sin conexión a internet', 'warning');
+        return;
+    }
+
+    const pending = SyncManager.getPendingSync();
+    
+    if (pending.length === 0) {
+        showToast('No hay operaciones pendientes', 'info');
+        await loadDashboard();
+        return;
+    }
+
+    showLoader(`Sincronizando ${pending.length} operación(es)...`);
+
+    const results = await SyncManager.syncPending();
+
+    hideLoader();
+
+    const successful = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+
+    if (successful > 0) {
+        showToast(`${successful} operación(es) sincronizada(s)`, 'success');
+        await loadDashboard();
+    }
+
+    if (failed > 0) {
+        showToast(`${failed} operación(es) fallaron`, 'error');
+    }
+}
+
+// Mostrar opciones de exportación
+function showExportOptions() {
+    const options = [
+        { text: 'Exportar a Excel', icon: 'fa-file-excel', action: () => ReportManager.exportToExcel() },
+        { text: 'Exportar a PDF', icon: 'fa-file-pdf', action: () => ReportManager.exportToPDF() }
+    ];
+
+    showContextMenu(options);
+}
+
+// Mostrar menú de usuario
+function showUserMenu() {
+    if (!AppState.currentUser) return;
+
+    const options = [
+        { 
+            text: `${AppState.currentUser.nombre} (${AppState.currentUser.rol})`, 
+            icon: 'fa-user', 
+            action: null,
+            disabled: true 
+        },
+        { text: 'Cerrar Sesión', icon: 'fa-sign-out-alt', action: handleLogout }
+    ];
+
+    showContextMenu(options);
+}
+
+// Cerrar sesión
+async function handleLogout() {
+    if (!confirm('¿Estás seguro de que deseas cerrar sesión?')) {
+        return;
+    }
+
+    showLoader('Cerrando sesión...');
+
+    const result = await AuthManager.logout();
+
+    hideLoader();
+
+    if (result.success) {
+        showToast('Sesión cerrada correctamente', 'success');
+        showScreen('loginScreen');
+        resetForm();
+        AppState.tablets = [];
+        AppState.filteredTablets = [];
+    } else {
+        showToast('Error cerrando sesión', 'error');
+    }
+}
+
+// Mostrar menú contextual
+function showContextMenu(options) {
+    // Remover menú existente si hay
+    const existingMenu = document.querySelector('.context-menu');
+    if (existingMenu) {
+        existingMenu.remove();
+    }
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.innerHTML = options.map(opt => `
+        <div class="context-menu-item ${opt.disabled ? 'disabled' : ''}" ${opt.action ? 'data-clickable="true"' : ''}>
+            <i class="fas ${opt.icon}"></i>
+            <span>${opt.text}</span>
+        </div>
+    `).join('');
+
+    document.body.appendChild(menu);
+
+    // Posicionar cerca del botón de usuario
+    const userBtn = document.getElementById('btnUser');
+    const rect = userBtn.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = `${rect.bottom + 10}px`;
+    menu.style.right = '1rem';
+
+    // Agregar event listeners
+    menu.querySelectorAll('[data-clickable="true"]').forEach((item, index) => {
+        const option = options.filter(o => !o.disabled)[index];
+        if (option && option.action) {
+            item.addEventListener('click', () => {
+                option.action();
+                menu.remove();
+            });
+        }
+    });
+
+    // Cerrar al hacer click fuera
+    setTimeout(() => {
+        document.addEventListener('click', function closeMenu(e) {
+            if (!menu.contains(e.target) && e.target !== userBtn) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        });
+    }, 100);
+
+    // Agregar estilos para menú contextual
+    if (!document.getElementById('contextMenuStyles')) {
+        const style = document.createElement('style');
+        style.id = 'contextMenuStyles';
+        style.textContent = `
+            .context-menu {
+                background: white;
+                border-radius: 8px;
+                box-shadow: var(--shadow-lg);
+                min-width: 200px;
+                z-index: 1001;
+                overflow: hidden;
+                animation: slideDown 0.2s ease;
+            }
+            @keyframes slideDown {
+                from {
+                    opacity: 0;
+                    transform: translateY(-10px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            .context-menu-item {
+                padding: 0.75rem 1rem;
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                cursor: pointer;
+                transition: var(--transition);
+                border-bottom: 1px solid var(--border-color);
+            }
+            .context-menu-item:last-child {
+                border-bottom: none;
+            }
+            .context-menu-item:hover:not(.disabled) {
+                background: var(--bg-color);
+            }
+            .context-menu-item.disabled {
+                opacity: 0.6;
+                cursor: default;
+                font-weight: 600;
+                color: var(--primary-color);
+            }
+            .context-menu-item i {
+                width: 20px;
+                text-align: center;
+                color: var(--primary-color);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+// Utilidades de UI
+function showScreen(screenId) {
+    document.querySelectorAll('.screen').forEach(screen => {
+        screen.classList.remove('active');
+    });
+    document.getElementById(screenId).classList.add('active');
+}
+
+function showLoader(message = 'Cargando...') {
+    const loader = document.getElementById('loader');
+    const text = loader.querySelector('p');
+    text.textContent = message;
+    loader.classList.remove('hidden');
+}
+
+function hideLoader() {
+    document.getElementById('loader').classList.add('hidden');
+}
+
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    
+    const icon = type === 'success' ? 'fa-check-circle' : 
+                 type === 'error' ? 'fa-exclamation-circle' :
+                 type === 'warning' ? 'fa-exclamation-triangle' :
+                 'fa-info-circle';
+    
+    toast.innerHTML = `
+        <i class="fas ${icon}"></i>
+        <span>${message}</span>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Auto-remover después de 4 segundos
+    setTimeout(() => {
+        toast.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+
+    // Agregar animación de salida si no existe
+    if (!document.getElementById('toastAnimations')) {
+        const style = document.createElement('style');
+        style.id = 'toastAnimations';
+        style.textContent = `
+            @keyframes slideOut {
+                to {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+function updateOnlineStatus() {
+    const statusIndicator = document.createElement('div');
+    statusIndicator.id = 'onlineStatus';
+    statusIndicator.className = 'online-status';
+    statusIndicator.innerHTML = `
+        <i class="fas fa-circle"></i>
+        <span>${AppState.isOnline ? 'En línea' : 'Sin conexión'}</span>
+    `;
+    
+    // Remover indicador existente
+    const existing = document.getElementById('onlineStatus');
+    if (existing) existing.remove();
+    
+    document.querySelector('.header-right').prepend(statusIndicator);
+
+    // Agregar estilos
+    if (!document.getElementById('onlineStatusStyles')) {
+        const style = document.createElement('style');
+        style.id = 'onlineStatusStyles';
+        style.textContent = `
+            .online-status {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1rem;
+                background: rgba(255, 255, 255, 0.2);
+                border-radius: 20px;
+                font-size: 0.875rem;
+                color: white;
+            }
+            .online-status i {
+                font-size: 0.5rem;
+                color: ${AppState.isOnline ? '#06d6a0' : '#f77f00'};
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+// Actualizar estado de conexión cuando cambie
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
