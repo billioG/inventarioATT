@@ -1,103 +1,184 @@
-// js/ocr.js - Solución Campos Exactos
-class OCRManager {
-  constructor() {
-    this.worker = null;
-  }
+// Manejo de OCR con Tesseract.js
+class OCRHandler {
+    static worker = null;
 
-  async init() {
-    if (!this.worker) {
-      this.worker = await Tesseract.createWorker();
-      await this.worker.loadLanguage('spa');
-      await this.worker.initialize('spa');
+    static async initialize() {
+        if (!this.worker) {
+            try {
+                this.worker = await Tesseract.createWorker('eng+spa', 1, {
+                    logger: m => {
+                        if (m.status === 'recognizing text') {
+                            console.log(`Progreso OCR: ${Math.round(m.progress * 100)}%`);
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error inicializando OCR:', error);
+                throw error;
+            }
+        }
+        return this.worker;
     }
-    return this.worker;
-  }
 
-  async processImage(imageSource) {
-    try {
-      this.showStatus('Analizando imagen...');
-      const worker = await this.init();
-      const { data } = await worker.recognize(imageSource);
-      this.hideStatus();
-      return this.parseTabletInfo(data.text);
-    } catch (error) {
-      this.hideStatus();
-      console.error('OCR Error:', error);
-      return {};
+    static async recognize(imageSource) {
+        try {
+            showLoader('Procesando imagen...');
+            
+            const worker = await this.initialize();
+            const { data: { text } } = await worker.recognize(imageSource);
+            
+            hideLoader();
+            return { success: true, text };
+        } catch (error) {
+            hideLoader();
+            console.error('Error en reconocimiento OCR:', error);
+            return { success: false, error: error.message };
+        }
     }
-  }
 
-  parseTabletInfo(text) {
-    const info = {
-      nombre_producto: null,
-      numero_modelo: null,
-      numero_serie: null,
-      version_android: null,
-      modelo: null
-    };
-
-    console.log('OCR Texto Crudo:', text);
-    // Limpiar líneas vacías
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].toLowerCase();
+    static async extractTabletInfo(imageSource) {
+        const result = await this.recognize(imageSource);
         
-        // 1. NOMBRE DEL PRODUCTO (Se copia a Nombre y a Número de Modelo)
-        if (line.includes('nombre del producto')) {
-            const val = this.extractValue(lines, i);
-            if (val) {
-                info.nombre_producto = val;
-                info.numero_modelo = val; // REGLA APLICADA
+        if (!result.success) {
+            return { success: false, error: result.error };
+        }
+
+        const text = result.text;
+        const extractedData = {
+            nombreProducto: null,
+            modelo: null,
+            numeroSerie: null,
+            nivelBateria: null
+        };
+
+        // Patrones de extracción
+        const patterns = {
+            // Nombre del producto (buscar marcas comunes)
+            nombreProducto: [
+                /(?:tablet|tab)\s+([a-z0-9\s]+)/i,
+                /(samsung|huawei|lenovo|amazon|apple|xiaomi)\s+([a-z0-9\s]+)/i,
+                /model[o]?:\s*([a-z0-9\s-]+)/i
+            ],
+            
+            // Modelo
+            modelo: [
+                /model[o]?:\s*([a-z0-9-]+)/i,
+                /^([a-z]{2,4}[-\s]?[0-9]{3,4}[a-z]?)/im,
+                /(tab[a-z]?[-\s]?[0-9]+[a-z]?)/i
+            ],
+            
+            // Número de serie
+            numeroSerie: [
+                /serial\s*(?:number|no|#)?:?\s*([a-z0-9]+)/i,
+                /s\/n:?\s*([a-z0-9]+)/i,
+                /\b([a-z0-9]{10,})\b/i // Serie larga alfanumérica
+            ],
+            
+            // Nivel de batería
+            nivelBateria: [
+                /battery:?\s*(\d+)\s*%/i,
+                /bater[ií]a:?\s*(\d+)\s*%/i,
+                /(\d+)\s*%/
+            ]
+        };
+
+        // Extraer cada campo
+        for (const [field, patternList] of Object.entries(patterns)) {
+            for (const pattern of patternList) {
+                const match = text.match(pattern);
+                if (match) {
+                    let value = match[1] || match[0];
+                    
+                    // Limpiar el valor
+                    value = value.trim();
+                    
+                    // Para batería, convertir a número
+                    if (field === 'nivelBateria') {
+                        const num = parseInt(value);
+                        if (num >= 0 && num <= 100) {
+                            extractedData[field] = num;
+                            break;
+                        }
+                    } else {
+                        extractedData[field] = value;
+                        break;
+                    }
+                }
             }
         }
 
-        // 2. MODELO (Nombre del modelo o Modelo)
-        // Se evita confundir con "Número de modelo"
-        else if ((line.includes('nombre del modelo') || line.startsWith('modelo')) && !line.includes('número')) {
-            info.modelo = this.extractValue(lines, i);
+        // Intentar detectar información adicional de Android
+        const androidMatch = text.match(/android\s+(\d+(?:\.\d+)?)/i);
+        if (androidMatch) {
+            extractedData.versionAndroid = `Android ${androidMatch[1]}`;
         }
 
-        // 3. NÚMERO DE SERIE (Número de serie o Serie)
-        else if (line.includes('número de serie') || line.startsWith('serie')) {
-            const val = this.extractValue(lines, i);
-            if (val) {
-                // Eliminar espacios (R 9 W T -> R9WT)
-                info.numero_serie = val.replace(/\s+/g, '').toUpperCase();
-            }
-        }
-        
-        // Extra: Android
-        else if (line.includes('android')) {
-            const match = lines[i].match(/Android\s+(\d+)/i);
-            if (match) info.version_android = match[1];
+        return {
+            success: true,
+            data: extractedData,
+            rawText: text
+        };
+    }
+
+    static async terminate() {
+        if (this.worker) {
+            await this.worker.terminate();
+            this.worker = null;
         }
     }
 
-    // Fallbacks si no encontró etiquetas
-    if (!info.numero_serie) {
-        const match = text.match(/\b(R[A-Z0-9]{9,11})\b/i);
-        if (match) info.numero_serie = match[0].toUpperCase();
+    // Preprocesar imagen para mejorar OCR
+    static preprocessImage(canvas, ctx) {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+
+        // Convertir a escala de grises y aumentar contraste
+        for (let i = 0; i < data.length; i += 4) {
+            const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+            
+            // Aumentar contraste
+            const contrast = 1.5;
+            const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+            const gray = factor * (avg - 128) + 128;
+            
+            data[i] = gray;
+            data[i + 1] = gray;
+            data[i + 2] = gray;
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        return canvas;
     }
-
-    return info;
-  }
-
-  extractValue(lines, index) {
-      const line = lines[index];
-      if (line.includes(':')) return line.split(':')[1].trim();
-      if (index + 1 < lines.length) return lines[index + 1].trim();
-      return null;
-  }
-
-  showStatus(msg) {
-    const el = document.getElementById('ocr-status');
-    if(el) { el.style.display='flex'; document.getElementById('ocr-status-text').textContent = msg; }
-  }
-  hideStatus() {
-    const el = document.getElementById('ocr-status');
-    if(el) el.style.display='none';
-  }
 }
 
-const ocrManager = new OCRManager();
+// Utilidades para formateo de datos extraídos
+class DataFormatter {
+    static formatSerialNumber(serial) {
+        if (!serial) return '';
+        return serial.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    }
+
+    static formatModel(model) {
+        if (!model) return '';
+        return model.trim().toUpperCase();
+    }
+
+    static detectAndroidVersion(text) {
+        const match = text.match(/android\s+(\d+(?:\.\d+)?)/i);
+        return match ? `Android ${match[1]}` : null;
+    }
+
+    static extractBatteryLevel(text) {
+        const matches = text.match(/(\d+)\s*%/g);
+        if (!matches) return null;
+        
+        // Buscar el valor más probable (entre 0 y 100)
+        for (const match of matches) {
+            const num = parseInt(match);
+            if (num >= 0 && num <= 100) {
+                return num;
+            }
+        }
+        return null;
+    }
+}
