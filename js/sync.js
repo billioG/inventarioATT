@@ -29,12 +29,13 @@ class SyncManager {
       }, 2000); // Esperar 2 segundos para que todo esté listo
     }
 
-    // Setup periodic sync (every 5 minutes)
+    // Setup periodic sync (MEJORADO: Cada 30 segundos en lugar de 5 minutos)
     this.syncInterval = setInterval(() => {
       if (navigator.onLine && !this.isSyncing && supabaseClient.isAvailable()) {
+        console.log('Sync: Ejecutando sincronización periódica...');
         this.syncAll();
       }
-    }, 5 * 60 * 1000);
+    }, 30 * 1000); // 30 segundos
 
     // Setup realtime subscription if online
     if (navigator.onLine && supabaseClient.isAvailable()) {
@@ -72,6 +73,18 @@ class SyncManager {
     if (this.realtimeSubscription) {
       supabaseClient.unsubscribe(this.realtimeSubscription);
       this.realtimeSubscription = null;
+    }
+  }
+
+  // NUEVO: Disparador de sincronización instantánea (llamado desde app.js al guardar)
+  async triggerInstantSync() {
+    if (navigator.onLine && !this.isSyncing && supabaseClient.isAvailable()) {
+      console.log('⚡ Sync: Sincronización inmediata disparada');
+      try {
+        await this.syncAll();
+      } catch (error) {
+        console.warn('Sync background error:', error);
+      }
     }
   }
 
@@ -165,11 +178,11 @@ class SyncManager {
       await this.processSyncQueue();
 
       console.log('Full bidirectional sync completed successfully');
-      showToast('Sincronización completada', 'success');
+      // showToast('Sincronización completada', 'success'); // Comentado para no spamear al usuario cada 30s
 
     } catch (error) {
       console.error('Sync error:', error);
-      showToast('Error en la sincronización: ' + error.message, 'error');
+      // showToast('Error en la sincronización: ' + error.message, 'error');
     } finally {
       this.isSyncing = false;
       await this.updateSyncBadge();
@@ -196,9 +209,7 @@ class SyncManager {
         }
       }
 
-      // NO DETECTAR NI ELIMINAR TABLETS "ELIMINADAS" AUTOMÁTICAMENTE
-      // Solo sincronizar lo que existe en el servidor
-      console.log('Server to local sync completed (sin eliminar registros locales)');
+      console.log('Server to local sync completed');
 
     } catch (error) {
       console.error('Error in server to local sync:', error);
@@ -206,7 +217,7 @@ class SyncManager {
     }
   }
 
-  // Sincronizar una tablet del servidor a local (MEJORADO)
+  // Sincronizar una tablet del servidor a local
   async syncTabletToLocal(serverTablet) {
     try {
       const localTablet = await dbManager.getTablet(serverTablet.id);
@@ -219,7 +230,7 @@ class SyncManager {
         // Existe - siempre actualizar con datos del servidor si no hay cambios locales pendientes
         if (localTablet.synced) {
           // Ya está sincronizado, actualizar con versión del servidor
-          console.log(`Updating tablet ${serverTablet.codigo_unico} from server`);
+          // console.log(`Updating tablet ${serverTablet.codigo_unico} from server`);
           await dbManager.saveTablet({ ...serverTablet, synced: true });
         } else {
           // Tiene cambios locales no sincronizados, no sobrescribir
@@ -243,7 +254,7 @@ class SyncManager {
       const unsyncedTablets = await dbManager.getUnsyncedTablets();
       
       if (unsyncedTablets.length === 0) {
-        console.log('No local changes to sync to server');
+        // console.log('No local changes to sync to server');
         return;
       }
 
@@ -308,7 +319,7 @@ class SyncManager {
           await supabaseClient.updateTablet(existing.id, tablet);
           const updatedTablet = {
             ...tablet,
-            id: existing.id,
+            id: existing.id, // IMPORTANTE: Usar ID del servidor
             synced: true,
             last_synced_at: new Date().toISOString()
           };
@@ -332,7 +343,7 @@ class SyncManager {
       const queueItems = await dbManager.getUnsyncedQueue();
 
       if (queueItems.length === 0) {
-        console.log('No items in sync queue');
+        // console.log('No items in sync queue');
         return;
       }
 
