@@ -6,7 +6,7 @@ class TabletInventoryApp {
     this.tablets = [];
     this.filteredTablets = [];
     
-    // MAPA DE SEDES: Corrige el problema de visualización
+    // MAPA DE SEDES
     this.sedeMap = {
       'Sede Central': 'Sanarate (EP)',
       'Sede Norte': 'La Pedrera (LP)',
@@ -23,7 +23,7 @@ class TabletInventoryApp {
       
       await dbManager.init();
       
-      // Intentar inicializar Supabase sin bloquear
+      // Intentar inicializar Supabase
       try { 
         if(typeof supabaseClient !== 'undefined') supabaseClient.init(); 
       } catch (e) { 
@@ -43,6 +43,8 @@ class TabletInventoryApp {
       await this.registerServiceWorker();
       await this.loadData();
       this.setupEventListeners();
+      
+      // Aquí es donde fallaba antes: Ahora las funciones existen
       this.hideSplashScreen();
       this.showApp();
       this.updateUI();
@@ -65,6 +67,23 @@ class TabletInventoryApp {
       }
     }, 5000);
   }
+
+  // --- FUNCIONES FALTANTES AGREGADAS ---
+  hideSplashScreen() {
+    const splash = document.getElementById('splash-screen');
+    if (splash) {
+      splash.style.opacity = '0';
+      setTimeout(() => {
+        splash.style.display = 'none';
+      }, 300);
+    }
+  }
+
+  showApp() {
+    const app = document.getElementById('app');
+    if (app) app.style.display = 'block';
+  }
+  // -------------------------------------
 
   async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
@@ -161,10 +180,12 @@ class TabletInventoryApp {
     document.getElementById('export-csv')?.addEventListener('click', () => this.exportData('csv'));
     document.getElementById('export-pdf')?.addEventListener('click', () => this.exportData('pdf'));
     document.getElementById('estado_pantalla')?.addEventListener('change', (e) => {
-        document.getElementById('estado_pantalla_otro_group').style.display = e.target.value === 'Otro' ? 'block' : 'none';
+        const otroGroup = document.getElementById('estado_pantalla_otro_group');
+        if(otroGroup) otroGroup.style.display = e.target.value === 'Otro' ? 'block' : 'none';
     });
     document.getElementById('estado_fisico_general')?.addEventListener('change', (e) => {
-        document.getElementById('estado_fisico_otro_group').style.display = e.target.value === 'Otro' ? 'block' : 'none';
+        const otroGroup = document.getElementById('estado_fisico_otro_group');
+        if(otroGroup) otroGroup.style.display = e.target.value === 'Otro' ? 'block' : 'none';
     });
     const slider = document.getElementById('nivel_bateria_slider');
     const input = document.getElementById('nivel_bateria');
@@ -185,22 +206,19 @@ class TabletInventoryApp {
     }
   }
 
-  // --- CORRECCIÓN TARJETA: Nombre Producto arriba, Serie abajo ---
   createTabletCard(tablet) {
     const card = document.createElement('div');
     card.className = 'tablet-card';
     card.onclick = () => this.showTabletDetail(tablet.id);
 
     const statusClass = this.getStatusClass(tablet.estado_pantalla);
-    // Usar el mapa para mostrar el nombre real de la sede (Sanarate, etc)
     const nombreSede = this.sedeMap[tablet.sede_procedencia] || tablet.sede_procedencia || 'Sin sede';
     
-    // Título: Nombre del Producto (si no existe, usa modelo o código)
+    // Título: Nombre del Producto
     const titulo = tablet.nombre_producto || tablet.modelo || tablet.codigo_unico;
     // Subtítulo: Número de Serie
     const subtitulo = tablet.numero_serie ? `Serie: ${tablet.numero_serie}` : 'Sin N/S';
 
-    // Indicador visual de sincronización en la tarjeta
     const syncStatusIcon = tablet.synced 
         ? '<span style="color:green; font-size:12px;">☁️ OK</span>' 
         : '<span style="color:orange; font-size:12px;">⌛ Pendiente</span>';
@@ -226,39 +244,24 @@ class TabletInventoryApp {
     return card;
   }
 
-  // --- CORRECCIÓN OCR: Mapeo de campos exacto ---
   async processOCR(imageSource) {
     try {
-      document.getElementById('ocr-preview').style.display = 'block';
+      const preview = document.getElementById('ocr-preview');
+      if(preview) preview.style.display = 'block';
       const img = document.getElementById('ocr-preview-image');
-      const blobUrl = imageSource instanceof Blob ? URL.createObjectURL(imageSource) : URL.createObjectURL(imageSource);
-      img.src = blobUrl;
+      if(img) img.src = imageSource instanceof Blob ? URL.createObjectURL(imageSource) : URL.createObjectURL(imageSource);
 
       const info = await ocrManager.processImage(imageSource);
 
-      // 1. Nombre del Producto -> Nombre Producto
       if (info.nombre_producto) {
         document.getElementById('nombre_producto').value = info.nombre_producto;
-        
-        // REGLA: Nombre de producto va TAMBIÉN en Número de Modelo
-        document.getElementById('numero_modelo').value = info.nombre_producto;
+        document.getElementById('numero_modelo').value = info.nombre_producto; 
       }
-
-      // 2. Modelo -> Modelo
-      if (info.modelo) {
-        document.getElementById('modelo').value = info.modelo;
-      }
-      
-      // 3. Número de Serie -> Número de Serie
-      if (info.numero_serie) {
-        document.getElementById('numero_serie').value = info.numero_serie;
-      }
-
-      // Si el OCR detectó un Número de Modelo explícito diferente al nombre, úsalo, si no, deja el nombre
+      if (info.modelo) document.getElementById('modelo').value = info.modelo;
+      if (info.numero_serie) document.getElementById('numero_serie').value = info.numero_serie;
       if (info.numero_modelo && info.numero_modelo !== info.nombre_producto) {
           document.getElementById('numero_modelo').value = info.numero_modelo;
       }
-
       if (info.version_android) document.getElementById('version_android').value = info.version_android;
 
       showToast('Datos extraídos. Verifica los campos.', 'success');
@@ -286,8 +289,6 @@ class TabletInventoryApp {
         showToast('Guardado localmente', 'success');
       } else {
         data.id = this.generateUUID();
-        
-        // Verificar duplicados locales
         const existing = await dbManager.searchTablets(data.codigo_unico);
         if(existing.length > 0 && !confirm('Código ya existe. ¿Deseas sobrescribir?')) return;
         if(existing.length > 0) data.id = existing[0].id;
@@ -297,7 +298,6 @@ class TabletInventoryApp {
         showToast('Guardado localmente', 'success');
       }
 
-      // Disparar sync y regresar al dashboard inmediatamente
       syncManager.triggerInstantSync(); 
       this.showView('dashboard');
 
@@ -326,10 +326,14 @@ class TabletInventoryApp {
   }
   async updateStatistics() {
       const s = await dbManager.getStats();
-      document.getElementById('stat-total').textContent = s.total;
-      document.getElementById('stat-good').textContent = s.good;
-      document.getElementById('stat-attention').textContent = s.attention;
-      document.getElementById('stat-pending').textContent = s.pending;
+      const elTotal = document.getElementById('stat-total');
+      if(elTotal) elTotal.textContent = s.total;
+      const elGood = document.getElementById('stat-good');
+      if(elGood) elGood.textContent = s.good;
+      const elAtt = document.getElementById('stat-attention');
+      if(elAtt) elAtt.textContent = s.attention;
+      const elPen = document.getElementById('stat-pending');
+      if(elPen) elPen.textContent = s.pending;
   }
   updateFilterOptions() {
       const s = document.getElementById('filter-sede');
@@ -346,12 +350,15 @@ class TabletInventoryApp {
   }
   renderTabletsList() {
       const c = document.getElementById('tablets-list');
+      if(!c) return;
       c.innerHTML = '';
       if(this.filteredTablets.length===0) {
-          document.getElementById('empty-state').style.display='flex';
+          const empty = document.getElementById('empty-state');
+          if(empty) empty.style.display='flex';
           return;
       }
-      document.getElementById('empty-state').style.display='none';
+      const empty = document.getElementById('empty-state');
+      if(empty) empty.style.display='none';
       this.filteredTablets.forEach(t => c.appendChild(this.createTabletCard(t)));
   }
   getStatusClass(e) {
@@ -363,16 +370,14 @@ class TabletInventoryApp {
       this.currentTablet = await dbManager.getTablet(id);
       if(!this.currentTablet) return;
       this.showView('detail');
-      this.renderDetailView(); // Método auxiliar para llenar el HTML del detalle
+      this.renderDetailView();
   }
   
-  // Renderizado del detalle (agregado para completitud)
   renderDetailView() {
     const t = this.currentTablet;
     const content = document.getElementById('tablet-detail-content');
     if(!content) return;
     
-    // Mismo mapeo de sede
     const nombreSede = this.sedeMap[t.sede_procedencia] || t.sede_procedencia;
 
     content.innerHTML = `
@@ -384,11 +389,15 @@ class TabletInventoryApp {
         <p><strong>Estado:</strong> ${t.estado_pantalla}</p>
         <p><strong>Batería:</strong> ${t.nivel_bateria}%</p>
         <hr>
-        <p><strong>Sync Status:</strong> ${t.synced ? 'Sincronizado' : 'Pendiente de subir'}</p>
+        <p><strong>Estado Sync:</strong> ${t.synced ? 'Sincronizado' : 'Pendiente'}</p>
+      </div>
+      <div class="detail-section">
+        <h4>Detalles Técnicos</h4>
+        <p>Andriod: ${t.version_android || '-'}</p>
+        <p>Puerto Carga: ${t.estado_puerto_carga || '-'}</p>
       </div>
     `;
     
-    // Botones de acción
     const editBtn = document.getElementById('edit-tablet-btn');
     const delBtn = document.getElementById('delete-tablet-btn');
     if(editBtn) editBtn.onclick = () => this.editTablet(t.id);
@@ -425,7 +434,6 @@ class TabletInventoryApp {
       document.getElementById('modelo').value = t.modelo || '';
       document.getElementById('nombre_producto').value = t.nombre_producto || '';
       document.getElementById('numero_modelo').value = t.numero_modelo || '';
-      // El select debe usar el valor interno (ej "Sede Central")
       document.getElementById('sede_procedencia').value = t.sede_procedencia || '';
       document.getElementById('version_android').value = t.version_android || '';
       document.getElementById('nivel_bateria').value = t.nivel_bateria || 0;
@@ -480,12 +488,15 @@ class TabletInventoryApp {
   updateUI() {
       const p = authManager.getCurrentProfile();
       if(p) {
-          document.getElementById('user-name').textContent = p.full_name || p.email;
-          document.getElementById('user-role').textContent = p.role;
+          const elName = document.getElementById('user-name');
+          const elRole = document.getElementById('user-role');
+          if(elName) elName.textContent = p.full_name || p.email;
+          if(elRole) elRole.textContent = p.role;
       }
   }
 }
 
+// Iniciar
 (function() {
     function start() { window.app = new TabletInventoryApp(); window.app.init(); }
     if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start);
