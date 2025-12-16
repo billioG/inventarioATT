@@ -1,168 +1,90 @@
-const CACHE_NAME = 'tablet-inventory-v1.0.0';
-const RUNTIME_CACHE = 'runtime-cache-v1';
+// sw.js - Service Worker Robusto y Dinámico
+const CACHE_NAME = 'tablet-inventory-v2.0'; // Incrementamos versión
+const RUNTIME_CACHE = 'runtime-cache-v2';
 
-// Assets to cache on install
+// Detectar base path dinámicamente para soportar carpetas anidadas
+const BASE_PATH = self.serviceWorker.scriptURL.replace(/\/sw\.js$/, '/');
+
 const STATIC_ASSETS = [
-  '/inventarioATT/',
-  '/inventarioATT/index.html',
-  '/inventarioATT/css/styles.css',
-  '/inventarioATT/js/app.js',
-  '/inventarioATT/js/db.js',
-  '/inventarioATT/js/supabase-client.js',
-  '/inventarioATT/js/auth.js',
-  '/inventarioATT/js/ocr.js',
-  '/inventarioATT/js/camera.js',
-  '/inventarioATT/js/sync.js',
-  '/inventarioATT/js/export.js',
-  '/inventarioATT/manifest.json'
-];
+  './',
+  './index.html',
+  './css/styles.css',
+  './js/app.js',
+  './js/db.js',
+  './js/supabase-client.js',
+  './js/auth.js',
+  './js/ocr.js',
+  './js/camera.js',
+  './js/sync.js',
+  './js/export.js',
+  './manifest.json'
+].map(path => new URL(path, BASE_PATH).href);
 
-// Install event - cache static assets
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing service worker...');
+  self.skipWaiting(); // Forzar activación inmediata
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('[SW] Caching static assets');
-        return cache.addAll(STATIC_ASSETS).catch(err => {
-          console.error('[SW] Cache addAll failed:', err);
-        });
-      })
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('[SW] Cacheando assets en:', BASE_PATH);
+      return cache.addAll(STATIC_ASSETS);
+    })
   );
 });
 
-// Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating service worker...');
   event.waitUntil(
-    caches.keys()
-      .then((cacheNames) => {
-        return Promise.all(
-          cacheNames
-            .filter((name) => name !== CACHE_NAME && name !== RUNTIME_CACHE)
-            .map((name) => {
-              console.log('[SW] Deleting old cache:', name);
-              return caches.delete(name);
-            })
-        );
-      })
-      .then(() => self.clients.claim())
+    caches.keys().then((names) => {
+      return Promise.all(
+        names.map((name) => {
+          if (name !== CACHE_NAME && name !== RUNTIME_CACHE) {
+            console.log('[SW] Borrando caché antigua:', name);
+            return caches.delete(name);
+          }
+        })
+      );
+    }).then(() => self.clients.claim())
   );
 });
 
-// Fetch event - network first, fallback to cache
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
+  // Estrategia: Network First para API/Supabase, Cache First para assets
+  const url = new URL(event.request.url);
 
-  // Skip non-GET requests
-  if (request.method !== 'GET') {
-    return;
-  }
+  // 1. Ignorar peticiones que no sean GET o sean de extensiones de navegador
+  if (event.request.method !== 'GET' || url.protocol.startsWith('chrome-extension')) return;
 
-  // Skip Supabase API calls
+  // 2. Supabase / API: Intentar red, fallback a offline msg
   if (url.origin.includes('supabase')) {
     event.respondWith(
-      fetch(request)
-        .catch(() => {
-          return new Response(
-            JSON.stringify({ error: 'offline', message: 'No network connection' }),
-            { 
-              status: 503,
-              headers: { 'Content-Type': 'application/json' }
-            }
-          );
-        })
-    );
-    return;
-  }
-
-  // Skip external CDN resources
-  if (!url.origin.includes(self.location.origin)) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const clonedResponse = response.clone();
-          caches.open(RUNTIME_CACHE).then((cache) => {
-            cache.put(request, clonedResponse);
-          });
-          return response;
-        })
-        .catch(() => {
-          return caches.match(request);
-        })
-    );
-    return;
-  }
-
-  // For app assets: Cache first, network fallback
-  event.respondWith(
-    caches.match(request)
-      .then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-
-        return fetch(request)
-          .then((response) => {
-            if (!response || response.status !== 200) {
-              return response;
-            }
-
-            const responseToCache = response.clone();
-            caches.open(RUNTIME_CACHE)
-              .then((cache) => {
-                cache.put(request, responseToCache);
-              });
-
-            return response;
-          })
-          .catch(() => {
-            if (request.destination === 'document') {
-              return caches.match('/inventarioATT/index.html');
-            }
-          });
+      fetch(event.request).catch(() => {
+        return new Response(JSON.stringify({ error: true, offline: true }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
       })
-  );
-});
-
-// Handle background sync
-self.addEventListener('sync', (event) => {
-  console.log('[SW] Background sync triggered:', event.tag);
-  
-  if (event.tag === 'sync-tablets') {
-    event.waitUntil(syncData());
-  }
-});
-
-// Sync function
-async function syncData() {
-  try {
-    const clients = await self.clients.matchAll();
-    clients.forEach((client) => {
-      client.postMessage({
-        type: 'BACKGROUND_SYNC',
-        action: 'start'
-      });
-    });
-  } catch (error) {
-    console.error('[SW] Background sync failed:', error);
-  }
-}
-
-// Handle messages from app
-self.addEventListener('message', (event) => {
-  console.log('[SW] Message received:', event.data);
-
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-
-  if (event.data && event.data.type === 'CACHE_URLS') {
-    event.waitUntil(
-      caches.open(RUNTIME_CACHE)
-        .then((cache) => cache.addAll(event.data.urls))
     );
+    return;
   }
+
+  // 3. Assets de la App: Cache First (Más rápido)
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      if (cachedResponse) return cachedResponse;
+
+      return fetch(event.request).then((response) => {
+        // Cachear dinámicamente nuevos recursos válidos
+        if (!response || response.status !== 200 || response.type !== 'basic') {
+          return response;
+        }
+        const responseToCache = response.clone();
+        caches.open(RUNTIME_CACHE).then((cache) => {
+          cache.put(event.request, responseToCache);
+        });
+        return response;
+      }).catch(() => {
+        // Fallback a index.html si navegan offline
+        if (event.request.mode === 'navigate') {
+          return caches.match(new URL('./index.html', BASE_PATH).href);
+        }
+      });
+    })
+  );
 });
