@@ -1,10 +1,11 @@
-// sw.js - Service Worker Robusto y Dinámico
-const CACHE_NAME = 'tablet-inventory-v2.0'; // Incrementamos versión
-const RUNTIME_CACHE = 'runtime-cache-v2';
+// sw.js - Service Worker (Cache Buster)
+const CACHE_NAME = 'tablet-inventory-v3.1'; // ¡Versión actualizada!
+const RUNTIME_CACHE = 'runtime-cache-v3.1';
 
-// Detectar base path dinámicamente para soportar carpetas anidadas
+// Detectar base path dinámicamente
 const BASE_PATH = self.serviceWorker.scriptURL.replace(/\/sw\.js$/, '/');
 
+// Lista de archivos a cachear
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -24,7 +25,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting(); // Forzar activación inmediata
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Cacheando assets en:', BASE_PATH);
+      console.log('[SW] Cacheando nueva versión:', CACHE_NAME);
       return cache.addAll(STATIC_ASSETS);
     })
   );
@@ -41,50 +42,35 @@ self.addEventListener('activate', (event) => {
           }
         })
       );
-    }).then(() => self.clients.claim())
+    }).then(() => {
+      console.log('[SW] Ahora controlando clientes');
+      return self.clients.claim();
+    })
   );
 });
 
 self.addEventListener('fetch', (event) => {
-  // Estrategia: Network First para API/Supabase, Cache First para assets
   const url = new URL(event.request.url);
+  if (event.request.method !== 'GET') return;
 
-  // 1. Ignorar peticiones que no sean GET o sean de extensiones de navegador
-  if (event.request.method !== 'GET' || url.protocol.startsWith('chrome-extension')) return;
-
-  // 2. Supabase / API: Intentar red, fallback a offline msg
+  // Supabase / API: Network Only (para evitar datos viejos)
   if (url.origin.includes('supabase')) {
-    event.respondWith(
-      fetch(event.request).catch(() => {
-        return new Response(JSON.stringify({ error: true, offline: true }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      })
-    );
+    event.respondWith(fetch(event.request).catch(() => new Response(JSON.stringify({ offline: true }))));
     return;
   }
 
-  // 3. Assets de la App: Cache First (Más rápido)
+  // App Assets: Stale-While-Revalidate (Usa caché pero busca nuevo en fondo)
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) return cachedResponse;
+      const fetchPromise = fetch(event.request).then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
+          caches.open(RUNTIME_CACHE).then((cache) => cache.put(event.request, responseClone));
+        }
+        return networkResponse;
+      }).catch(() => cachedResponse); // Si falla red, devuelve caché
 
-      return fetch(event.request).then((response) => {
-        // Cachear dinámicamente nuevos recursos válidos
-        if (!response || response.status !== 200 || response.type !== 'basic') {
-          return response;
-        }
-        const responseToCache = response.clone();
-        caches.open(RUNTIME_CACHE).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
-        return response;
-      }).catch(() => {
-        // Fallback a index.html si navegan offline
-        if (event.request.mode === 'navigate') {
-          return caches.match(new URL('./index.html', BASE_PATH).href);
-        }
-      });
+      return cachedResponse || fetchPromise;
     })
   );
 });
