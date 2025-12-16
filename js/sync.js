@@ -1,4 +1,4 @@
-// js/sync.js - Sincronización Robusta
+// js/sync.js - Versión Final Corregida (Incluye manualSync)
 class SyncManager {
   constructor() {
     this.isSyncing = false;
@@ -7,13 +7,13 @@ class SyncManager {
   }
 
   init() {
-    console.log('Initializing Sync Manager v3...'); // Log nuevo para verificar versión
+    console.log('Initializing Sync Manager v3.2...'); 
 
     window.addEventListener('online', () => this.handleOnline());
     window.addEventListener('offline', () => this.handleOffline());
 
-    // 1. Sincronización INMEDIATA al cargar (con pequeño delay para asegurar DB lista)
-    if (navigator.onLine && supabaseClient.isAvailable()) {
+    // 1. Sincronización INMEDIATA al cargar
+    if (navigator.onLine && this.isSupabaseAvailable()) {
       setTimeout(() => {
         console.log('Sync: Ejecutando carga inicial...');
         this.syncAll(false); // false = silencioso
@@ -22,22 +22,26 @@ class SyncManager {
 
     // 2. Sincronización PERIÓDICA (Cada 30 segundos)
     this.syncInterval = setInterval(() => {
-      if (navigator.onLine && !this.isSyncing && supabaseClient.isAvailable()) {
+      if (navigator.onLine && !this.isSyncing && this.isSupabaseAvailable()) {
         this.syncAll(false);
       }
     }, 30000);
 
-    if (navigator.onLine && supabaseClient.isAvailable()) {
+    if (navigator.onLine && this.isSupabaseAvailable()) {
       this.setupRealtimeSync();
     }
 
     this.updateSyncBadge();
   }
 
+  isSupabaseAvailable() {
+    return typeof supabaseClient !== 'undefined' && supabaseClient.isAvailable();
+  }
+
   handleOnline() {
     console.log('Online detectado');
     this.hideOfflineIndicator();
-    if (supabaseClient.isAvailable()) {
+    if (this.isSupabaseAvailable()) {
       this.syncAll(true);
       this.setupRealtimeSync();
     }
@@ -48,22 +52,39 @@ class SyncManager {
     this.showOfflineIndicator();
   }
 
-  // Método para llamar manualmente o tras guardar
+  // --- ESTA ES LA FUNCIÓN QUE FALTABA ---
+  async manualSync() {
+    if (!navigator.onLine) {
+        showToast('Sin conexión a internet', 'warning');
+        return;
+    }
+    if (this.isSyncing) {
+        showToast('Ya se está sincronizando...', 'info');
+        return;
+    }
+    
+    showToast('Iniciando sincronización...', 'info');
+    await this.syncAll(true); // true = mostrar mensajes de éxito/error
+  }
+  // --------------------------------------
+
+  // Método para llamar tras guardar (silencioso pero inmediato)
   async triggerInstantSync() {
-    if (navigator.onLine && !this.isSyncing && supabaseClient.isAvailable()) {
+    if (navigator.onLine && !this.isSyncing && this.isSupabaseAvailable()) {
       console.log('⚡ Sync inmediata disparada');
       await this.syncAll(true);
     }
   }
 
   async syncAll(showMessages = true) {
-    if (this.isSyncing || !navigator.onLine || !supabaseClient.isAvailable()) return;
+    if (this.isSyncing || !navigator.onLine || !this.isSupabaseAvailable()) return;
 
     this.isSyncing = true;
     console.log(' Iniciando Sincronización...');
 
     try {
       // 1. BAJAR (Server -> Local)
+      // Obtenemos tablets del servidor
       const serverTablets = await supabaseClient.getTablets();
       if (serverTablets && serverTablets.length > 0) {
         for (const t of serverTablets) {
@@ -87,7 +108,7 @@ class SyncManager {
       console.log('Sync completado.');
       if (showMessages) showToast('Sincronización completada', 'success');
 
-      // 4. ACTUALIZAR PANTALLA (Crítico para que veas los cambios)
+      // 4. ACTUALIZAR PANTALLA (Para ver los cambios reflejados)
       if (window.app) {
         await window.app.loadData();
         window.app.renderDashboard();
@@ -107,19 +128,19 @@ class SyncManager {
 
   async syncTabletToServer(tablet) {
     try {
-      // Limpiar campos internos antes de enviar
+      // Limpiar campos internos antes de enviar (evitar enviar synced, etc al server si no existen en tabla)
       const { id, synced, last_synced_at, ...cleanData } = tablet;
       
-      // Intentar Insertar
+      // Intentar Insertar/Actualizar (Upsert)
       const { data, error } = await supabaseClient.client
         .from('tablets')
-        .upsert({ ...cleanData, id: id }) // Upsert maneja insert/update automático
+        .upsert({ ...cleanData, id: id }) 
         .select()
         .single();
 
       if (error) throw error;
 
-      // Marcar como sync localmente
+      // Si éxito, marcar como sync localmente
       await dbManager.saveTablet({ ...tablet, synced: true });
 
     } catch (e) {
@@ -133,6 +154,8 @@ class SyncManager {
       if (item.operation === 'DELETE') {
         await supabaseClient.deleteTablet(item.record_id);
       }
+      // UPDATE e INSERT ya se manejan en el paso 2 al subir unsyncedTablets,
+      // pero si quedó algo en cola específico, lo marcamos:
       await dbManager.markQueueItemSynced(item.id);
     }
   }
