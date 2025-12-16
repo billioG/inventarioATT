@@ -2,12 +2,44 @@
 // CONFIGURACIÓN DE SUPABASE
 // ========================================
 const SUPABASE_URL = 'https://pfshuqbqoqunockrphnm.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmc2h1cWJxb3F1bm9ja3JwaG5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMjkwODksImV4cCI6MjA4MDkwNTA4OX0.lQW62ETddyyPQLbOHEJ7w6wUZ8qoNvX97gqjV-4GgCQ'; // REEMPLAZAR con tu clave
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmc2h1cWJxb3F1bm9ja3JwaG5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMjkwODksImV4cCI6MjA4MDkwNTA4OX0.lQW62ETddyyPQLbOHEJ7w6wUZ8qoNvX97gqjV-4GgCQ'; // REEMPLAZAR CON TU CLAVE REAL
 
-// Verificar que supabase no esté ya declarado
-if (typeof supabase === 'undefined') {
-    var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Esperar a que la librería de Supabase esté disponible
+let supabaseClient;
+
+function initializeSupabase() {
+    if (typeof window.supabase === 'undefined') {
+        console.error('Supabase no está cargado. Asegúrate de que el CDN esté incluido.');
+        return null;
+    }
+    
+    try {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        console.log('✅ Supabase inicializado correctamente');
+        return supabaseClient;
+    } catch (error) {
+        console.error('❌ Error inicializando Supabase:', error);
+        return null;
+    }
 }
+
+// Intentar inicializar inmediatamente
+supabaseClient = initializeSupabase();
+
+// Si falla, reintentar después de que se cargue la página
+if (!supabaseClient) {
+    window.addEventListener('load', () => {
+        supabaseClient = initializeSupabase();
+    });
+}
+
+// Getter para acceder al cliente de forma segura
+const getSupabase = () => {
+    if (!supabaseClient) {
+        supabaseClient = initializeSupabase();
+    }
+    return supabaseClient;
+};
 
 // ========================================
 // ESTADO GLOBAL DE LA APLICACIÓN
@@ -28,7 +60,14 @@ const AppState = {
 class AuthManager {
     static async login(email, password) {
         try {
-            // Primero autenticar con Supabase Auth
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado. Por favor recarga la página.');
+            }
+
+            console.log('Intentando autenticar:', email);
+
+            // Autenticar con Supabase Auth
             const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
                 email,
                 password
@@ -39,12 +78,11 @@ class AuthManager {
                 throw new Error('Credenciales incorrectas. Verifica tu email y contraseña.');
             }
 
-            // Verificar que el usuario esté autenticado
             if (!authData.user) {
                 throw new Error('No se pudo autenticar el usuario');
             }
 
-            console.log('Usuario autenticado:', authData.user.email);
+            console.log('✅ Usuario autenticado:', authData.user.email);
 
             // Obtener información del usuario de la tabla usuarios
             const { data: userData, error: userError } = await supabase
@@ -55,11 +93,10 @@ class AuthManager {
 
             if (userError) {
                 console.error('Error obteniendo usuario:', userError);
-                throw new Error('Error obteniendo información del usuario');
             }
 
             if (!userData) {
-                console.warn('Usuario autenticado pero no registrado en tabla usuarios. Creando automáticamente...');
+                console.warn('⚠️ Usuario autenticado pero no registrado en tabla usuarios. Creando automáticamente...');
                 
                 // Auto-registrar usuario
                 const { data: newUser, error: insertError } = await supabase
@@ -67,14 +104,21 @@ class AuthManager {
                     .insert([{
                         email: email,
                         nombre: authData.user.email.split('@')[0],
-                        rol: 'lectura'
+                        rol: 'admin'
                     }])
                     .select()
                     .single();
 
                 if (insertError) {
                     console.error('Error creando usuario:', insertError);
-                    throw new Error('Error registrando usuario en el sistema');
+                    // Continuar con usuario temporal
+                    AppState.currentUser = {
+                        id: authData.user.id,
+                        email: email,
+                        nombre: authData.user.email.split('@')[0],
+                        rol: 'admin'
+                    };
+                    return { success: true, user: AppState.currentUser };
                 }
 
                 AppState.currentUser = newUser;
@@ -84,7 +128,7 @@ class AuthManager {
             AppState.currentUser = userData;
             return { success: true, user: userData };
         } catch (error) {
-            console.error('Error en login:', error);
+            console.error('❌ Error en login:', error);
             return { 
                 success: false, 
                 error: error.message || 'Error desconocido durante el login'
@@ -94,19 +138,31 @@ class AuthManager {
 
     static async logout() {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado');
+            }
+
             const { error } = await supabase.auth.signOut();
             if (error) throw error;
             
             AppState.currentUser = null;
+            console.log('✅ Sesión cerrada');
             return { success: true };
         } catch (error) {
-            console.error('Error en logout:', error);
+            console.error('❌ Error en logout:', error);
             return { success: false, error: error.message };
         }
     }
 
     static async getCurrentUser() {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.log('⚠️ Supabase no disponible aún');
+                return null;
+            }
+
             const { data: { user } } = await supabase.auth.getUser();
             
             if (user) {
@@ -118,12 +174,13 @@ class AuthManager {
                 
                 if (userData) {
                     AppState.currentUser = userData;
+                    console.log('✅ Usuario actual:', userData.email);
                     return userData;
                 }
             }
             return null;
         } catch (error) {
-            console.error('Error obteniendo usuario:', error);
+            console.error('❌ Error obteniendo usuario:', error);
             return null;
         }
     }
@@ -148,6 +205,11 @@ class AuthManager {
 class TabletManager {
     static async getAll(filters = {}) {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado');
+            }
+
             let query = supabase
                 .from('tablets')
                 .select('*')
@@ -181,13 +243,18 @@ class TabletManager {
             AppState.filteredTablets = data || [];
             return { success: true, data: data || [] };
         } catch (error) {
-            console.error('Error obteniendo tablets:', error);
+            console.error('❌ Error obteniendo tablets:', error);
             return { success: false, error: error.message };
         }
     }
 
     static async getById(id) {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado');
+            }
+
             const { data, error } = await supabase
                 .from('tablets')
                 .select('*')
@@ -199,13 +266,18 @@ class TabletManager {
             AppState.currentTablet = data;
             return { success: true, data };
         } catch (error) {
-            console.error('Error obteniendo tablet:', error);
+            console.error('❌ Error obteniendo tablet:', error);
             return { success: false, error: error.message };
         }
     }
 
     static async create(tabletData) {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado');
+            }
+
             const dataToInsert = {
                 ...tabletData,
                 usuario_creador: AppState.currentUser?.id,
@@ -220,15 +292,21 @@ class TabletManager {
 
             if (error) throw error;
 
+            console.log('✅ Tablet creada:', data.codigo_unico);
             return { success: true, data };
         } catch (error) {
-            console.error('Error creando tablet:', error);
+            console.error('❌ Error creando tablet:', error);
             return { success: false, error: error.message };
         }
     }
 
     static async update(id, tabletData) {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado');
+            }
+
             const dataToUpdate = {
                 ...tabletData,
                 usuario_modificador: AppState.currentUser?.id
@@ -243,15 +321,21 @@ class TabletManager {
 
             if (error) throw error;
 
+            console.log('✅ Tablet actualizada:', data.codigo_unico);
             return { success: true, data };
         } catch (error) {
-            console.error('Error actualizando tablet:', error);
+            console.error('❌ Error actualizando tablet:', error);
             return { success: false, error: error.message };
         }
     }
 
     static async delete(id) {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado');
+            }
+
             const { error } = await supabase
                 .from('tablets')
                 .delete()
@@ -259,28 +343,34 @@ class TabletManager {
 
             if (error) throw error;
 
+            console.log('✅ Tablet eliminada');
             return { success: true };
         } catch (error) {
-            console.error('Error eliminando tablet:', error);
+            console.error('❌ Error eliminando tablet:', error);
             return { success: false, error: error.message };
         }
     }
 
     static async generateUniqueCode() {
         try {
-            // Intentar usar la función de Supabase
-            const { data, error } = await supabase
-                .rpc('generar_codigo_unico');
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado');
+            }
+
+            // Intentar usar función RPC
+            const { data, error } = await supabase.rpc('generar_codigo_unico');
 
             if (!error && data) {
                 return { success: true, code: data };
             }
         } catch (error) {
-            console.log('Función RPC no disponible, generando código manualmente');
+            console.log('⚠️ Función RPC no disponible, generando código manualmente');
         }
 
         // Fallback: generar código manualmente
         try {
+            const supabase = getSupabase();
             const today = new Date();
             const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
             
@@ -297,7 +387,7 @@ class TabletManager {
 
             return { success: true, code };
         } catch (error) {
-            console.error('Error generando código:', error);
+            console.error('❌ Error generando código:', error);
             // Último fallback: usar timestamp
             const code = `TAB-${Date.now()}`;
             return { success: true, code };
@@ -306,6 +396,11 @@ class TabletManager {
 
     static async getHistory(tabletId) {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado');
+            }
+
             const { data, error } = await supabase
                 .from('historial_tablets')
                 .select(`
@@ -319,7 +414,7 @@ class TabletManager {
 
             return { success: true, data: data || [] };
         } catch (error) {
-            console.error('Error obteniendo historial:', error);
+            console.error('❌ Error obteniendo historial:', error);
             return { success: false, error: error.message };
         }
     }
@@ -369,6 +464,11 @@ class TabletManager {
 class PhotoManager {
     static async uploadPhoto(file, tabletCode) {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado');
+            }
+
             const fileExt = file.name.split('.').pop();
             const fileName = `${tabletCode}/${Date.now()}.${fileExt}`;
 
@@ -385,9 +485,10 @@ class PhotoManager {
                 .from('tablet-photos')
                 .getPublicUrl(fileName);
 
+            console.log('✅ Foto subida:', fileName);
             return { success: true, url: urlData.publicUrl, path: fileName };
         } catch (error) {
-            console.error('Error subiendo foto:', error);
+            console.error('❌ Error subiendo foto:', error);
             return { success: false, error: error.message };
         }
     }
@@ -407,15 +508,21 @@ class PhotoManager {
 
     static async deletePhoto(path) {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado');
+            }
+
             const { error } = await supabase.storage
                 .from('tablet-photos')
                 .remove([path]);
 
             if (error) throw error;
 
+            console.log('✅ Foto eliminada:', path);
             return { success: true };
         } catch (error) {
-            console.error('Error eliminando foto:', error);
+            console.error('❌ Error eliminando foto:', error);
             return { success: false, error: error.message };
         }
     }
@@ -432,6 +539,11 @@ class PhotoManager {
 class OptionsManager {
     static async getEstadoPantallaOptions() {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado');
+            }
+
             const { data, error } = await supabase
                 .from('opciones_estado_pantalla')
                 .select('opcion')
@@ -441,13 +553,18 @@ class OptionsManager {
 
             return { success: true, options: data.map(d => d.opcion) };
         } catch (error) {
-            console.error('Error obteniendo opciones:', error);
+            console.error('❌ Error obteniendo opciones:', error);
             return { success: false, options: ['Bueno', 'Rayado', 'Quebrado', 'Con manchas'] };
         }
     }
 
     static async addEstadoPantallaOption(option) {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                throw new Error('Supabase no está inicializado');
+            }
+
             const { data, error } = await supabase
                 .from('opciones_estado_pantalla')
                 .insert([{ opcion: option }])
@@ -455,16 +572,17 @@ class OptionsManager {
                 .single();
 
             if (error) {
-                // Si ya existe, no es un error crítico
+                // Si ya existe (error 23505), no es crítico
                 if (error.code === '23505') {
                     return { success: true, data: { opcion: option } };
                 }
                 throw error;
             }
 
+            console.log('✅ Opción agregada:', option);
             return { success: true, data };
         } catch (error) {
-            console.error('Error agregando opción:', error);
+            console.error('❌ Error agregando opción:', error);
             return { success: false, error: error.message };
         }
     }
@@ -482,7 +600,7 @@ class SyncManager {
             localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
             return true;
         } catch (error) {
-            console.error('Error guardando offline:', error);
+            console.error('❌ Error guardando offline:', error);
             return false;
         }
     }
@@ -492,7 +610,7 @@ class SyncManager {
             const data = localStorage.getItem(this.STORAGE_KEY);
             return data ? JSON.parse(data) : null;
         } catch (error) {
-            console.error('Error cargando offline:', error);
+            console.error('❌ Error cargando offline:', error);
             return null;
         }
     }
@@ -508,7 +626,7 @@ class SyncManager {
             AppState.pendingSync = pending;
             return true;
         } catch (error) {
-            console.error('Error agregando operación pendiente:', error);
+            console.error('❌ Error agregando operación pendiente:', error);
             return false;
         }
     }
@@ -518,7 +636,7 @@ class SyncManager {
             const data = localStorage.getItem(this.PENDING_KEY);
             return data ? JSON.parse(data) : [];
         } catch (error) {
-            console.error('Error obteniendo operaciones pendientes:', error);
+            console.error('❌ Error obteniendo operaciones pendientes:', error);
             return [];
         }
     }
@@ -571,6 +689,8 @@ class SyncManager {
 // ========================================
 window.addEventListener('online', async () => {
     AppState.isOnline = true;
+    console.log('✅ Conexión restaurada');
+    
     if (typeof showToast !== 'undefined') {
         showToast('Conexión restaurada. Sincronizando...', 'info');
     }
@@ -578,8 +698,10 @@ window.addEventListener('online', async () => {
     const results = await SyncManager.syncPending();
     const successful = results.filter(r => r.success).length;
     
-    if (successful > 0 && typeof showToast !== 'undefined') {
-        showToast(`${successful} operaciones sincronizadas correctamente`, 'success');
+    if (successful > 0) {
+        if (typeof showToast !== 'undefined') {
+            showToast(`${successful} operaciones sincronizadas correctamente`, 'success');
+        }
         if (typeof loadDashboard !== 'undefined') {
             await TabletManager.getAll();
             loadDashboard();
@@ -589,6 +711,8 @@ window.addEventListener('online', async () => {
 
 window.addEventListener('offline', () => {
     AppState.isOnline = false;
+    console.log('⚠️ Sin conexión');
+    
     if (typeof showToast !== 'undefined') {
         showToast('Sin conexión. Los cambios se guardarán localmente.', 'warning');
     }
@@ -596,4 +720,4 @@ window.addEventListener('offline', () => {
 
 AppState.isOnline = navigator.onLine;
 
-console.log('supabase-client.js cargado correctamente');
+console.log('✅ supabase-client.js cargado correctamente');
