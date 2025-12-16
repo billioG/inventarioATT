@@ -1,4 +1,4 @@
-// js/ocr.js
+// js/ocr.js - Lógica corregida según tus instrucciones exactas
 class OCRManager {
   constructor() {
     this.worker = null;
@@ -8,14 +8,15 @@ class OCRManager {
   async init() {
     try {
       if (!this.worker) {
+        // Inicializar Tesseract
         this.worker = await Tesseract.createWorker();
         await this.worker.loadLanguage('spa');
         await this.worker.initialize('spa');
       }
       return this.worker;
     } catch (error) {
-      console.error('OCR Error:', error);
-      showToast('Error iniciando OCR', 'warning');
+      console.error('OCR Init Error:', error);
+      showToast('No se pudo iniciar el escáner visual', 'warning');
       return null;
     }
   }
@@ -23,12 +24,13 @@ class OCRManager {
   async processImage(imageSource) {
     try {
       this.isProcessing = true;
-      this.showStatus('Leyendo imagen...');
-      
+      this.showStatus('Leyendo datos de la imagen...');
+
       const worker = await this.init();
       if (!worker) return this.getEmptyInfo();
 
       const { data } = await worker.recognize(imageSource);
+      
       this.isProcessing = false;
       this.hideStatus();
 
@@ -37,97 +39,111 @@ class OCRManager {
       this.isProcessing = false;
       this.hideStatus();
       console.error('OCR Process Error:', error);
-      showToast('No se pudo leer la imagen', 'error');
+      showToast('No se pudieron extraer datos. Intenta con otra foto.', 'error');
       return this.getEmptyInfo();
     }
   }
 
   getEmptyInfo() {
     return {
-        nombre_producto: null,
-        numero_modelo: null,
-        numero_serie: null,
-        version_android: null,
-        modelo: null,
-        codigo_unico: null
+      nombre_producto: null,
+      numero_modelo: null,
+      numero_serie: null,
+      version_android: null,
+      modelo: null,
+      codigo_unico: null
     };
   }
 
-  // --- LÓGICA DE EXTRACCIÓN MEJORADA ---
   parseTabletInfo(text) {
     const info = this.getEmptyInfo();
-    console.log('Texto OCR:', text);
+    console.log('Texto escaneado:', text);
 
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    // Limpiar el texto y dividir por líneas
+    const lines = text.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0);
 
     for (let i = 0; i < lines.length; i++) {
-        const lineOriginal = lines[i];
-        const line = lineOriginal.toLowerCase();
+      const lineOriginal = lines[i];
+      const line = lineOriginal.toLowerCase();
 
-        // 1. Número de Serie / Serie -> numero_serie
-        if (line.includes('número de serie') || line.startsWith('serie')) {
-            info.numero_serie = this.extractValue(lines, i);
-            // Limpiar espacios en el serie (ej: R 9 W T -> R9WT)
-            if (info.numero_serie) {
-                info.numero_serie = info.numero_serie.replace(/\s+/g, '').toUpperCase();
-            }
+      // REGLA 1: Número de serie
+      // Busca "Número de serie" o "Serie"
+      if (line.includes('número de serie') || line.startsWith('serie')) {
+        let val = this.extractValue(lines, i);
+        if (val) {
+          // Eliminar espacios (ej: "R 5 X" -> "R5X")
+          info.numero_serie = val.replace(/\s+/g, '').toUpperCase();
         }
+      }
 
-        // 2. Nombre del modelo / Modelo -> modelo
-        // (Excluyendo "número de modelo" para no confundir)
-        else if ((line.includes('nombre del modelo') || line.startsWith('modelo')) && !line.includes('número')) {
-            info.modelo = this.extractValue(lines, i);
-        }
+      // REGLA 2: Modelo
+      // Busca "Nombre del modelo" o "Modelo" (ignorando "número de modelo")
+      else if ((line.includes('nombre del modelo') || line.startsWith('modelo')) && !line.includes('número')) {
+        info.modelo = this.extractValue(lines, i);
+      }
 
-        // 3. Nombre del producto -> nombre_producto Y numero_modelo
-        else if (line.includes('nombre del producto')) {
-            const val = this.extractValue(lines, i);
-            if (val) {
-                info.nombre_producto = val;
-                info.numero_modelo = val; // REGLA APLICADA: El mismo valor va aquí
-            }
+      // REGLA 3: Nombre del producto
+      // Este valor va en 'nombre_producto' Y en 'numero_modelo' como pediste
+      else if (line.includes('nombre del producto')) {
+        let val = this.extractValue(lines, i);
+        if (val) {
+          info.nombre_producto = val;
+          info.numero_modelo = val; // <--- Se copia al número de modelo
         }
-
-        // Extra: Versión Android (por si acaso)
-        else if (line.includes('android')) {
-            const match = lineOriginal.match(/Android\s+(\d+(\.\d+)?)/i);
-            if (match) info.version_android = match[1];
-        }
+      }
     }
 
-    // Fallbacks simples si no se encontró por etiqueta
+    // Fallbacks (Solo si falló lo anterior)
     if (!info.numero_serie) {
-        // Buscar patrón Samsung (R seguido de 9-11 alfanuméricos)
-        const match = text.match(/\b(R[A-Z0-9]{9,11})\b/i);
-        if (match) info.numero_serie = match[0].toUpperCase();
+      // Patrón Samsung: R seguido de 9-11 caracteres
+      const match = text.match(/\b(R[A-Z0-9]{9,11})\b/i);
+      if (match) info.numero_serie = match[0].toUpperCase();
     }
 
-    console.log('Datos extraídos:', info);
+    if (!info.nombre_producto) {
+       // Buscar Galaxy Tab si no se encontró etiqueta
+       const match = text.match(/Galaxy\s+Tab\s+[A-Z0-9\s]+/i);
+       if (match) {
+         info.nombre_producto = match[0].trim();
+         if (!info.numero_modelo) info.numero_modelo = match[0].trim();
+       }
+    }
+
+    console.log('Datos extraídos finales:', info);
     return info;
   }
 
-  // Ayudante para sacar el valor de la misma línea (después de :) o de la siguiente
+  // Utilidad para sacar el valor de la misma línea (después de :) o la siguiente
   extractValue(lines, index) {
     const line = lines[index];
+    // Si tiene dos puntos, tomar lo de la derecha
     if (line.includes(':')) {
-        return line.split(':')[1].trim();
+      return line.split(':')[1].trim();
     }
-    // Si no tiene ':', tomamos la línea siguiente
+    // Si no, tomar la línea siguiente si existe
     if (index + 1 < lines.length) {
-        return lines[index + 1].trim();
+      return lines[index + 1].trim();
     }
     return null;
   }
 
-  updateProgress(p) { /* ... código visual igual ... */ }
-  showStatus(msg) { 
-    const el = document.getElementById('ocr-status');
-    const txt = document.getElementById('ocr-status-text');
-    if (el && txt) { txt.innerText = msg; el.style.display = 'flex'; }
+  // Helpers visuales
+  updateProgress(p) { /* Opcional: implementar si quieres barra de progreso */ }
+  
+  showStatus(msg) {
+    const container = document.getElementById('ocr-status');
+    const text = document.getElementById('ocr-status-text');
+    if (container && text) {
+      text.innerText = msg;
+      container.style.display = 'flex';
+    }
   }
+
   hideStatus() {
-    const el = document.getElementById('ocr-status');
-    if (el) el.style.display = 'none';
+    const container = document.getElementById('ocr-status');
+    if (container) container.style.display = 'none';
   }
 }
 
