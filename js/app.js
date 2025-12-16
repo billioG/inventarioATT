@@ -221,25 +221,19 @@ class TabletInventoryApp {
   }
 
   // Load data from IndexedDB
-  async loadData() {
-    try {
-      this.tablets = await dbManager.getAllTablets();
-      this.filteredTablets = [...this.tablets];
-
-      console.log(`Loaded ${this.tablets.length} tablets from local storage`);
-
-      // Intento de sync en background si hay conexión
-      if (navigator.onLine && supabaseClient.isAvailable()) {
-        syncManager.triggerInstantSync().catch(err => {
-          console.warn('Background sync warning:', err);
-        });
-      }
-
-    } catch (error) {
-      console.error('Load data error:', error);
-      showToast('Error cargando datos. Intentando recuperar...', 'error');
-    }
+// En js/app.js
+async loadData() {
+  try {
+    // Siempre carga lo que haya en la base de datos local
+    this.tablets = await dbManager.getAllTablets();
+    this.filteredTablets = [...this.tablets];
+    
+    // Si es la primera carga y está vacío, el syncManager se encargará de rellenarlo y llamar a renderDashboard
+    
+  } catch (error) {
+    console.error('Error cargando datos:', error);
   }
+}
 
   // Setup event listeners
   setupEventListeners() {
