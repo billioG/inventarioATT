@@ -1,9 +1,113 @@
-// Variables globales de UI
+// ========================================
+// VARIABLES GLOBALES
+// ========================================
 let currentPhotos = [];
 let isEditMode = false;
 let editingTabletId = null;
 
-// Inicialización de la aplicación
+// ========================================
+// UTILIDADES DE UI (Definir primero)
+// ========================================
+function showScreen(screenId) {
+    document.querySelectorAll('.screen').forEach(screen => {
+        screen.classList.remove('active');
+    });
+    document.getElementById(screenId).classList.add('active');
+}
+
+function showLoader(message = 'Cargando...') {
+    const loader = document.getElementById('loader');
+    const text = loader.querySelector('p');
+    text.textContent = message;
+    loader.classList.remove('hidden');
+}
+
+function hideLoader() {
+    document.getElementById('loader').classList.add('hidden');
+}
+
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    
+    const icon = type === 'success' ? 'fa-check-circle' : 
+                 type === 'error' ? 'fa-exclamation-circle' :
+                 type === 'warning' ? 'fa-exclamation-triangle' :
+                 'fa-info-circle';
+    
+    toast.innerHTML = `
+        <i class="fas ${icon}"></i>
+        <span>${message}</span>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Auto-remover después de 4 segundos
+    setTimeout(() => {
+        toast.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+
+    // Agregar animación de salida si no existe
+    if (!document.getElementById('toastAnimations')) {
+        const style = document.createElement('style');
+        style.id = 'toastAnimations';
+        style.textContent = `
+            @keyframes slideOut {
+                to {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+function updateOnlineStatus() {
+    const statusIndicator = document.createElement('div');
+    statusIndicator.id = 'onlineStatus';
+    statusIndicator.className = 'online-status';
+    statusIndicator.innerHTML = `
+        <i class="fas fa-circle"></i>
+        <span>${AppState.isOnline ? 'En línea' : 'Sin conexión'}</span>
+    `;
+    
+    // Remover indicador existente
+    const existing = document.getElementById('onlineStatus');
+    if (existing) existing.remove();
+    
+    document.querySelector('.header-right').prepend(statusIndicator);
+
+    // Agregar estilos
+    if (!document.getElementById('onlineStatusStyles')) {
+        const style = document.createElement('style');
+        style.id = 'onlineStatusStyles';
+        style.textContent = `
+            .online-status {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1rem;
+                background: rgba(255, 255, 255, 0.2);
+                border-radius: 20px;
+                font-size: 0.875rem;
+                color: white;
+            }
+            .online-status i {
+                font-size: 0.5rem;
+                color: ${AppState.isOnline ? '#06d6a0' : '#f77f00'};
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+// ========================================
+// INICIALIZACIÓN
+// ========================================
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('Iniciando aplicación...');
     
@@ -24,7 +128,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateOnlineStatus();
 });
 
-// Configurar todos los event listeners
+// ========================================
+// EVENT LISTENERS
+// ========================================
 function setupEventListeners() {
     // Login
     document.getElementById('loginForm').addEventListener('submit', handleLogin);
@@ -108,7 +214,9 @@ function setupEventListeners() {
     document.getElementById('btnUser').addEventListener('click', showUserMenu);
 }
 
-// Manejo de login
+// ========================================
+// AUTENTICACIÓN
+// ========================================
 async function handleLogin(e) {
     e.preventDefault();
     
@@ -130,7 +238,31 @@ async function handleLogin(e) {
     }
 }
 
-// Cargar dashboard principal
+async function handleLogout() {
+    if (!confirm('¿Estás seguro de que deseas cerrar sesión?')) {
+        return;
+    }
+
+    showLoader('Cerrando sesión...');
+
+    const result = await AuthManager.logout();
+
+    hideLoader();
+
+    if (result.success) {
+        showToast('Sesión cerrada correctamente', 'success');
+        showScreen('loginScreen');
+        resetForm();
+        AppState.tablets = [];
+        AppState.filteredTablets = [];
+    } else {
+        showToast('Error cerrando sesión', 'error');
+    }
+}
+
+// ========================================
+// DASHBOARD Y LISTADO
+// ========================================
 async function loadDashboard() {
     showLoader('Cargando inventario...');
 
@@ -160,7 +292,6 @@ async function loadDashboard() {
     }
 }
 
-// Renderizar lista de tablets
 function renderTabletsList() {
     const container = document.getElementById('tabletsList');
     const noResults = document.getElementById('noResults');
@@ -222,7 +353,6 @@ function renderTabletsList() {
     }
 }
 
-// Obtener clase de estado
 function getStatusClass(tablet) {
     if (tablet.estado_pantalla === 'Quebrado' || 
         tablet.estado_puerto_carga === 'No Funciona' ||
@@ -240,7 +370,6 @@ function getStatusClass(tablet) {
     return 'status-good';
 }
 
-// Obtener texto de estado
 function getStatusText(tablet) {
     if (tablet.estado_pantalla === 'Quebrado' || 
         tablet.estado_puerto_carga === 'No Funciona' ||
@@ -257,7 +386,6 @@ function getStatusText(tablet) {
     return 'Buen estado';
 }
 
-// Actualizar estadísticas
 function updateStatistics() {
     const stats = TabletManager.getStatistics();
 
@@ -266,7 +394,10 @@ function updateStatistics() {
     document.getElementById('tabletsIssues').textContent = stats.issues;
     document.getElementById('avgBattery').textContent = `${stats.avgBattery}%`;
 }
-// Búsqueda
+
+// ========================================
+// BÚSQUEDA Y FILTROS
+// ========================================
 function handleSearch(e) {
     const searchTerm = e.target.value;
     TabletManager.searchLocal(searchTerm);
@@ -274,13 +405,11 @@ function handleSearch(e) {
     updateStatistics();
 }
 
-// Toggle panel de filtros
 function toggleFilterPanel() {
     const panel = document.getElementById('filterPanel');
     panel.classList.toggle('hidden');
 }
 
-// Aplicar filtros
 async function applyFilters() {
     const filters = {
         sede: document.getElementById('filterSede').value,
@@ -306,7 +435,6 @@ async function applyFilters() {
     }
 }
 
-// Limpiar filtros
 async function clearFilters() {
     document.getElementById('filterSede').value = '';
     document.getElementById('filterEstadoPantalla').value = '';
@@ -317,7 +445,9 @@ async function clearFilters() {
     await applyFilters();
 }
 
-// Mostrar pantalla de formulario
+// ========================================
+// FORMULARIO
+// ========================================
 function showFormScreen(tablet = null) {
     if (tablet) {
         isEditMode = true;
@@ -337,7 +467,6 @@ function showFormScreen(tablet = null) {
     showScreen('formScreen');
 }
 
-// Llenar formulario con datos
 function fillForm(tablet) {
     document.getElementById('codigoUnico').value = tablet.codigo_unico;
     document.getElementById('numeroSerie').value = tablet.numero_serie || '';
@@ -379,7 +508,6 @@ function fillForm(tablet) {
     }
 }
 
-// Resetear formulario
 function resetForm() {
     document.getElementById('tabletForm').reset();
     document.getElementById('estadoPantallaOtroGroup').classList.add('hidden');
@@ -391,7 +519,6 @@ function resetForm() {
     editingTabletId = null;
 }
 
-// Generar código único
 async function generateCode() {
     showLoader('Generando código...');
     
@@ -407,7 +534,6 @@ async function generateCode() {
     }
 }
 
-// Manejo de envío de formulario
 async function handleFormSubmit(e) {
     e.preventDefault();
 
@@ -501,7 +627,10 @@ async function handleFormSubmit(e) {
     }
 }
 
-// Mostrar detalles de tablet
+// Continúa en el siguiente comentario...
+// ========================================
+// DETALLES DE TABLET
+// ========================================
 async function showTabletDetails(tabletId) {
     showLoader('Cargando detalles...');
 
@@ -694,14 +823,12 @@ async function showTabletDetails(tabletId) {
     });
 }
 
-// Editar tablet actual
 function editCurrentTablet() {
     const modal = document.getElementById('detailModal');
     modal.classList.remove('active');
     showFormScreen(AppState.currentTablet);
 }
 
-// Eliminar tablet actual
 async function deleteCurrentTablet() {
     if (!AuthManager.hasPermission('delete')) {
         showToast('No tienes permisos para eliminar tablets', 'error');
@@ -729,7 +856,6 @@ async function deleteCurrentTablet() {
     }
 }
 
-// Ver historial de cambios
 async function viewHistory() {
     showLoader('Cargando historial...');
 
@@ -828,7 +954,9 @@ async function viewHistory() {
     }
 }
 
-// Abrir cámara para foto normal
+// ========================================
+// CÁMARA Y FOTOS
+// ========================================
 async function openCamera() {
     const modal = document.getElementById('cameraModal');
     const video = document.getElementById('cameraVideo');
@@ -836,6 +964,7 @@ async function openCamera() {
     const ocrResult = document.getElementById('ocrResult');
 
     ocrResult.classList.add('hidden');
+    modal.dataset.ocrMode = 'false';
     
     const result = await CameraManager.initialize(video, canvas);
 
@@ -847,7 +976,6 @@ async function openCamera() {
     modal.classList.add('active');
 }
 
-// Abrir cámara para OCR
 async function openCameraForOCR() {
     const modal = document.getElementById('cameraModal');
     const video = document.getElementById('cameraVideo');
@@ -864,7 +992,6 @@ async function openCameraForOCR() {
     modal.dataset.ocrMode = 'true';
 }
 
-// Capturar foto
 async function capturePhoto() {
     const modal = document.getElementById('cameraModal');
     const isOCRMode = modal.dataset.ocrMode === 'true';
@@ -895,7 +1022,6 @@ async function capturePhoto() {
     }
 }
 
-// Capturar y procesar con OCR
 async function captureAndProcessOCR() {
     showLoader('Procesando imagen con OCR...');
 
@@ -988,7 +1114,6 @@ async function captureAndProcessOCR() {
     renderPhotoPreview();
 }
 
-// Aplicar datos de OCR al formulario
 function applyOCRData() {
     if (!window.ocrExtractedData) {
         showToast('No hay datos de OCR para aplicar', 'error');
@@ -1025,7 +1150,6 @@ function applyOCRData() {
     showToast('Datos aplicados al formulario', 'success');
 }
 
-// Cerrar modal de cámara
 function closeCameraModal() {
     const modal = document.getElementById('cameraModal');
     const ocrResult = document.getElementById('ocrResult');
@@ -1037,7 +1161,6 @@ function closeCameraModal() {
     window.ocrExtractedData = null;
 }
 
-// Manejar selección de archivos desde galería
 async function handleFileSelect(e) {
     const files = Array.from(e.target.files);
     
@@ -1065,7 +1188,6 @@ async function handleFileSelect(e) {
     e.target.value = '';
 }
 
-// Renderizar preview de fotos
 function renderPhotoPreview() {
     const container = document.getElementById('photoPreview');
 
@@ -1084,7 +1206,6 @@ function renderPhotoPreview() {
     `).join('');
 }
 
-// Eliminar foto
 function removePhoto(index) {
     const photo = currentPhotos[index];
     
@@ -1099,7 +1220,9 @@ function removePhoto(index) {
     showToast('Foto eliminada', 'info');
 }
 
-// Sincronización
+// ========================================
+// SINCRONIZACIÓN Y EXPORTACIÓN
+// ========================================
 async function handleSync() {
     if (!AppState.isOnline) {
         showToast('Sin conexión a internet', 'warning');
@@ -1133,7 +1256,6 @@ async function handleSync() {
     }
 }
 
-// Mostrar opciones de exportación
 function showExportOptions() {
     const options = [
         { text: 'Exportar a Excel', icon: 'fa-file-excel', action: () => ReportManager.exportToExcel() },
@@ -1143,7 +1265,6 @@ function showExportOptions() {
     showContextMenu(options);
 }
 
-// Mostrar menú de usuario
 function showUserMenu() {
     if (!AppState.currentUser) return;
 
@@ -1160,30 +1281,6 @@ function showUserMenu() {
     showContextMenu(options);
 }
 
-// Cerrar sesión
-async function handleLogout() {
-    if (!confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-        return;
-    }
-
-    showLoader('Cerrando sesión...');
-
-    const result = await AuthManager.logout();
-
-    hideLoader();
-
-    if (result.success) {
-        showToast('Sesión cerrada correctamente', 'success');
-        showScreen('loginScreen');
-        resetForm();
-        AppState.tablets = [];
-        AppState.filteredTablets = [];
-    } else {
-        showToast('Error cerrando sesión', 'error');
-    }
-}
-
-// Mostrar menú contextual
 function showContextMenu(options) {
     // Remover menú existente si hay
     const existingMenu = document.querySelector('.context-menu');
@@ -1202,7 +1299,7 @@ function showContextMenu(options) {
 
     document.body.appendChild(menu);
 
-    // Posicionar cerca del botón de usuario
+    // Posicionar cerca del botón
     const userBtn = document.getElementById('btnUser');
     const rect = userBtn.getBoundingClientRect();
     menu.style.position = 'fixed';
@@ -1210,8 +1307,11 @@ function showContextMenu(options) {
     menu.style.right = '1rem';
 
     // Agregar event listeners
-    menu.querySelectorAll('[data-clickable="true"]').forEach((item, index) => {
-        const option = options.filter(o => !o.disabled)[index];
+    const clickableItems = menu.querySelectorAll('[data-clickable="true"]');
+    const activeOptions = options.filter(o => !o.disabled);
+    
+    clickableItems.forEach((item, index) => {
+        const option = activeOptions[index];
         if (option && option.action) {
             item.addEventListener('click', () => {
                 option.action();
@@ -1223,7 +1323,7 @@ function showContextMenu(options) {
     // Cerrar al hacer click fuera
     setTimeout(() => {
         document.addEventListener('click', function closeMenu(e) {
-            if (!menu.contains(e.target) && e.target !== userBtn) {
+            if (!menu.contains(e.target) && e.target !== userBtn && e.target !== document.getElementById('btnExport')) {
                 menu.remove();
                 document.removeEventListener('click', closeMenu);
             }
@@ -1285,104 +1385,13 @@ function showContextMenu(options) {
     }
 }
 
-// Utilidades de UI
-function showScreen(screenId) {
-    document.querySelectorAll('.screen').forEach(screen => {
-        screen.classList.remove('active');
-    });
-    document.getElementById(screenId).classList.add('active');
-}
-
-function showLoader(message = 'Cargando...') {
-    const loader = document.getElementById('loader');
-    const text = loader.querySelector('p');
-    text.textContent = message;
-    loader.classList.remove('hidden');
-}
-
-function hideLoader() {
-    document.getElementById('loader').classList.add('hidden');
-}
-
-function showToast(message, type = 'info') {
-    const container = document.getElementById('toastContainer');
-    
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    
-    const icon = type === 'success' ? 'fa-check-circle' : 
-                 type === 'error' ? 'fa-exclamation-circle' :
-                 type === 'warning' ? 'fa-exclamation-triangle' :
-                 'fa-info-circle';
-    
-    toast.innerHTML = `
-        <i class="fas ${icon}"></i>
-        <span>${message}</span>
-    `;
-    
-    container.appendChild(toast);
-    
-    // Auto-remover después de 4 segundos
-    setTimeout(() => {
-        toast.style.animation = 'slideOut 0.3s ease';
-        setTimeout(() => toast.remove(), 300);
-    }, 4000);
-
-    // Agregar animación de salida si no existe
-    if (!document.getElementById('toastAnimations')) {
-        const style = document.createElement('style');
-        style.id = 'toastAnimations';
-        style.textContent = `
-            @keyframes slideOut {
-                to {
-                    transform: translateX(100%);
-                    opacity: 0;
-                }
-            }
-        `;
-        document.head.appendChild(style);
-    }
-}
-
-function updateOnlineStatus() {
-    const statusIndicator = document.createElement('div');
-    statusIndicator.id = 'onlineStatus';
-    statusIndicator.className = 'online-status';
-    statusIndicator.innerHTML = `
-        <i class="fas fa-circle"></i>
-        <span>${AppState.isOnline ? 'En línea' : 'Sin conexión'}</span>
-    `;
-    
-    // Remover indicador existente
-    const existing = document.getElementById('onlineStatus');
-    if (existing) existing.remove();
-    
-    document.querySelector('.header-right').prepend(statusIndicator);
-
-    // Agregar estilos
-    if (!document.getElementById('onlineStatusStyles')) {
-        const style = document.createElement('style');
-        style.id = 'onlineStatusStyles';
-        style.textContent = `
-            .online-status {
-                display: flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 1rem;
-                background: rgba(255, 255, 255, 0.2);
-                border-radius: 20px;
-                font-size: 0.875rem;
-                color: white;
-            }
-            .online-status i {
-                font-size: 0.5rem;
-                color: ${AppState.isOnline ? '#06d6a0' : '#f77f00'};
-            }
-        `;
-        document.head.appendChild(style);
-    }
-}
-
-// Actualizar estado de conexión cuando cambie
+// ========================================
+// LISTENERS PARA CONEXIÓN
+// ========================================
 window.addEventListener('online', updateOnlineStatus);
 window.addEventListener('offline', updateOnlineStatus);
+
+// ========================================
+// FIN DEL ARCHIVO
+// ========================================
+console.log('app.js cargado correctamente');
