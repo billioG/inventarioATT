@@ -1,167 +1,190 @@
-// Camera Manager
+// Gestión de cámara y captura de fotos
 class CameraManager {
-  constructor() {
-    this.stream = null;
-    this.video = null;
-    this.canvas = null;
-    this.isActive = false;
-  }
+    static stream = null;
+    static videoElement = null;
+    static canvasElement = null;
 
-  // Initialize camera
-  async init() {
-    try {
-      this.video = document.getElementById('camera-video');
-      this.canvas = document.getElementById('camera-canvas');
+    static async initialize(videoElement, canvasElement) {
+        this.videoElement = videoElement;
+        this.canvasElement = canvasElement;
 
-      if (!this.video || !this.canvas) {
-        throw new Error('Video or canvas element not found');
-      }
+        try {
+            // Solicitar acceso a la cámara
+            this.stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: 'environment', // Cámara trasera en móviles
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                }
+            });
 
-      return true;
-    } catch (error) {
-      console.error('Camera initialization error:', error);
-      throw error;
+            this.videoElement.srcObject = this.stream;
+            await this.videoElement.play();
+
+            return { success: true };
+        } catch (error) {
+            console.error('Error accediendo a la cámara:', error);
+            return { success: false, error: error.message };
+        }
     }
-  }
 
-  // Start camera stream
-  async start() {
-    try {
-      await this.init();
+    static capture() {
+        if (!this.videoElement || !this.canvasElement) {
+            return { success: false, error: 'Cámara no inicializada' };
+        }
 
-      const constraints = {
-        video: {
-          facingMode: 'environment', // Use back camera on mobile
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: false
-      };
+        try {
+            const video = this.videoElement;
+            const canvas = this.canvasElement;
 
-      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
-      this.video.srcObject = this.stream;
-      
-      await this.video.play();
-      
-      this.isActive = true;
-      this.showPreview();
+            // Configurar canvas con las dimensiones del video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
 
-      console.log('Camera started');
-      return true;
-    } catch (error) {
-      console.error('Camera start error:', error);
-      
-      // User-friendly error messages
-      let message = 'No se pudo acceder a la cámara.';
-      
-      if (error.name === 'NotAllowedError') {
-        message = 'Permiso de cámara denegado. Por favor, permite el acceso a la cámara en la configuración.';
-      } else if (error.name === 'NotFoundError') {
-        message = 'No se encontró ninguna cámara en este dispositivo.';
-      } else if (error.name === 'NotReadableError') {
-        message = 'La cámara está siendo usada por otra aplicación.';
-      }
+            // Capturar frame
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      showToast(message, 'error');
-      throw error;
+            // Convertir a blob
+            return new Promise((resolve) => {
+                canvas.toBlob((blob) => {
+                    const url = URL.createObjectURL(blob);
+                    resolve({
+                        success: true,
+                        blob,
+                        url,
+                        canvas
+                    });
+                }, 'image/jpeg', 0.95);
+            });
+        } catch (error) {
+            console.error('Error capturando imagen:', error);
+            return { success: false, error: error.message };
+        }
     }
-  }
 
-  // Stop camera stream
-  stop() {
-    try {
-      if (this.stream) {
-        this.stream.getTracks().forEach(track => track.stop());
-        this.stream = null;
-      }
+    static stop() {
+        if (this.stream) {
+            this.stream.getTracks().forEach(track => track.stop());
+            this.stream = null;
+        }
 
-      if (this.video) {
-        this.video.srcObject = null;
-      }
-
-      this.isActive = false;
-      this.hidePreview();
-
-      console.log('Camera stopped');
-    } catch (error) {
-      console.error('Camera stop error:', error);
+        if (this.videoElement) {
+            this.videoElement.srcObject = null;
+        }
     }
-  }
 
-  // Capture photo from video stream
-  capturePhoto() {
-    try {
-      if (!this.isActive || !this.video || !this.canvas) {
-        throw new Error('Camera not active');
-      }
+    static async captureAndExtractInfo() {
+        const captureResult = await this.capture();
+        
+        if (!captureResult.success) {
+            return captureResult;
+        }
 
-      const context = this.canvas.getContext('2d');
-      
-      // Set canvas size to video size
-      this.canvas.width = this.video.videoWidth;
-      this.canvas.height = this.video.videoHeight;
+        // Procesar con OCR
+        const ocrResult = await OCRHandler.extractTabletInfo(captureResult.canvas);
 
-      // Draw video frame to canvas
-      context.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
-
-      // Get image data
-      const imageDataUrl = this.canvas.toDataURL('image/jpeg', 0.9);
-      
-      // Convert to blob
-      return this.dataURLtoBlob(imageDataUrl);
-    } catch (error) {
-      console.error('Capture photo error:', error);
-      throw error;
+        return {
+            success: true,
+            image: captureResult,
+            ocr: ocrResult
+        };
     }
-  }
-
-  // Convert data URL to Blob
-  dataURLtoBlob(dataURL) {
-    const arr = dataURL.split(',');
-    const mime = arr[0].match(/:(.*?);/)[1];
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
-    }
-    
-    return new Blob([u8arr], { type: mime });
-  }
-
-  // Convert blob to data URL
-  blobToDataURL(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  // Show camera preview
-  showPreview() {
-    const preview = document.getElementById('camera-preview');
-    if (preview) {
-      preview.style.display = 'block';
-    }
-  }
-
-  // Hide camera preview
-  hidePreview() {
-    const preview = document.getElementById('camera-preview');
-    if (preview) {
-      preview.style.display = 'none';
-    }
-  }
-
-  // Check if camera is supported
-  static isSupported() {
-    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-  }
 }
 
-// Export singleton
-const cameraManager = new CameraManager();
+// Gestión de archivos de imagen
+class ImageHandler {
+    static async readFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                resolve(e.target.result);
+            };
+            
+            reader.onerror = (e) => {
+                reject(e);
+            };
+            
+            reader.readAsDataURL(file);
+        });
+    }
 
+    static async createImageElement(src) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            
+            img.onload = () => {
+                resolve(img);
+            };
+            
+            img.onerror = (e) => {
+                reject(e);
+            };
+            
+            img.src = src;
+        });
+    }
+
+    static async resizeImage(file, maxWidth = 1920, maxHeight = 1080) {
+        const dataUrl = await this.readFile(file);
+        const img = await this.createImageElement(dataUrl);
+
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        // Calcular nuevas dimensiones manteniendo aspecto
+        if (width > height) {
+            if (width > maxWidth) {
+                height = Math.round((height * maxWidth) / width);
+                width = maxWidth;
+            }
+        } else {
+            if (height > maxHeight) {
+                width = Math.round((width * maxHeight) / height);
+                height = maxHeight;
+            }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        return new Promise((resolve) => {
+            canvas.toBlob((blob) => {
+                resolve({
+                    blob,
+                    url: URL.createObjectURL(blob),
+                    width,
+                    height
+                });
+            }, 'image/jpeg', 0.9);
+        });
+    }
+
+    static async processMultipleFiles(files) {
+        const results = [];
+        
+        for (const file of files) {
+            if (file.type.startsWith('image/')) {
+                const resized = await this.resizeImage(file);
+                results.push({
+                    original: file,
+                    resized: resized.blob,
+                    url: resized.url,
+                    width: resized.width,
+                    height: resized.height
+                });
+            }
+        }
+
+        return results;
+    }
+
+    static blobToFile(blob, filename) {
+        return new File([blob], filename, { type: blob.type });
+    }
+}
