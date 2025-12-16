@@ -1,4 +1,4 @@
-// js/db.js - Versión Corregida y Completa
+// js/db.js - COMPLETO Y CORREGIDO
 class DBManager {
   constructor() {
     this.dbName = 'TabletInventoryDB';
@@ -23,7 +23,6 @@ class DBManager {
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
         
-        // Store Tablets
         if (!db.objectStoreNames.contains('tablets')) {
           const store = db.createObjectStore('tablets', { keyPath: 'id' });
           store.createIndex('codigo_unico', 'codigo_unico', { unique: true });
@@ -31,20 +30,16 @@ class DBManager {
           store.createIndex('synced', 'synced', { unique: false });
         }
 
-        // Store SyncQueue
         if (!db.objectStoreNames.contains('syncQueue')) {
           db.createObjectStore('syncQueue', { keyPath: 'id', autoIncrement: true });
         }
 
-        // Store Profile
         if (!db.objectStoreNames.contains('profile')) {
           db.createObjectStore('profile', { keyPath: 'id' });
         }
-
-        // Store Images (para caché offline de evidencias)
+        
         if (!db.objectStoreNames.contains('images')) {
-          const imgStore = db.createObjectStore('images', { keyPath: 'id' });
-          imgStore.createIndex('tablet_id', 'tablet_id', { unique: false });
+          db.createObjectStore('images', { keyPath: 'id' });
         }
       };
     });
@@ -56,7 +51,6 @@ class DBManager {
   }
 
   // --- Operaciones Genéricas ---
-
   async put(storeName, data) {
     return new Promise((resolve, reject) => {
       const request = this.transaction(storeName, 'readwrite').put(data);
@@ -90,15 +84,14 @@ class DBManager {
   }
 
   // --- Métodos Específicos para Tablets ---
-
   async saveTablet(tablet) {
     tablet.updated_at = new Date().toISOString();
     if (!tablet.created_at) tablet.created_at = tablet.updated_at;
-    tablet.synced = !!tablet.synced; // Asegurar booleano
+    tablet.synced = !!tablet.synced;
     return this.put('tablets', tablet);
   }
 
-  // 🔥 RESTAURADO: Este método faltaba y causaba el error en sync.js
+  // ESTE ES EL MÉTODO QUE FALTABA Y CAUSABA EL ERROR
   async getTablet(id) {
     return this.get('tablets', id);
   }
@@ -107,7 +100,6 @@ class DBManager {
     return this.getAll('tablets');
   }
 
-  // 🔥 RESTAURADO: Necesario para eliminar tablets
   async deleteTablet(id) {
     return this.delete('tablets', id);
   }
@@ -115,7 +107,6 @@ class DBManager {
   async searchTablets(query) {
     const all = await this.getAllTablets();
     if (!query) return all;
-    
     const q = query.toLowerCase();
     return all.filter(t => 
       (t.codigo_unico && t.codigo_unico.toLowerCase().includes(q)) ||
@@ -130,7 +121,6 @@ class DBManager {
   }
 
   // --- Sync Queue ---
-
   async addToSyncQueue(operation, tableName, recordId, data) {
     return this.put('syncQueue', {
       operation,
@@ -147,7 +137,6 @@ class DBManager {
     return all.filter(item => !item.synced);
   }
   
-  // 🔥 RESTAURADO: sync.js suele usar esto para marcar éxito
   async markQueueItemSynced(id) {
     const item = await this.get('syncQueue', id);
     if (item) {
@@ -161,23 +150,11 @@ class DBManager {
     return this.delete('syncQueue', id);
   }
 
-  // --- Imágenes (Caché Offline) ---
-  
-  async saveImage(imageData) {
-    return this.put('images', imageData);
-  }
-
-  async getImage(id) {
-    return this.get('images', id);
-  }
-
-  // --- Profile & Stats ---
-
+  // --- Profile & Images ---
   async saveProfile(profile) { return this.put('profile', profile); }
-  
-  async getProfile(id) { 
-    return this.get('profile', id);
-  }
+  async getProfile(id) { return this.get('profile', id); }
+  async saveImage(img) { return this.put('images', img); }
+  async getImage(id) { return this.get('images', id); }
 
   async getStats() {
     const tablets = await this.getAllTablets();
@@ -190,5 +167,4 @@ class DBManager {
   }
 }
 
-// Export singleton
 const dbManager = new DBManager();
