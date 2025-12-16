@@ -168,6 +168,34 @@
             </div>
 
             <form id="tabletForm" class="tablet-form">
+                                <!-- Fotos de Evidencia -->
+                <div class="form-section">
+                    <h3>Fotos de Evidencia</h3>
+                    <div class="photo-upload-area">
+                        <button type="button" id="btnCamera" class="btn-photo">
+                            <i class="fas fa-camera"></i> Tomar Foto
+                        </button>
+                        <button type="button" id="btnGallery" class="btn-photo">
+                            <i class="fas fa-image"></i> Desde Galería
+                        </button>
+                        <button type="button" id="btnScanOCR" class="btn-photo">
+                            <i class="fas fa-scan"></i> Escanear Info (OCR)
+                        </button>
+                        <input type="file" id="fileInput" accept="image/*" multiple hidden>
+                        <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+                    </div>
+                    <div id="photoPreview" class="photo-preview">
+                        <!-- Las fotos se mostrarán aquí -->
+                    </div>
+                </div>
+
+                <!-- Botones de acción -->
+                <div class="form-actions">
+                    <button type="button" id="btnCancel" class="btn-secondary">Cancelar</button>
+                    <button type="submit" class="btn-primary">
+                        <i class="fas fa-save"></i> Guardar
+                    </button>
+                </div>
                 <!-- Información Básica -->
                 <div class="form-section">
                     <h3>Información Básica</h3>
@@ -292,34 +320,7 @@
                     </div>
                 </div>
 
-                <!-- Fotos de Evidencia -->
-                <div class="form-section">
-                    <h3>Fotos de Evidencia</h3>
-                    <div class="photo-upload-area">
-                        <button type="button" id="btnCamera" class="btn-photo">
-                            <i class="fas fa-camera"></i> Tomar Foto
-                        </button>
-                        <button type="button" id="btnGallery" class="btn-photo">
-                            <i class="fas fa-image"></i> Desde Galería
-                        </button>
-                        <button type="button" id="btnScanOCR" class="btn-photo">
-                            <i class="fas fa-scan"></i> Escanear Info (OCR)
-                        </button>
-                        <input type="file" id="fileInput" accept="image/*" multiple hidden>
-                        <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
-                    </div>
-                    <div id="photoPreview" class="photo-preview">
-                        <!-- Las fotos se mostrarán aquí -->
-                    </div>
-                </div>
 
-                <!-- Botones de acción -->
-                <div class="form-actions">
-                    <button type="button" id="btnCancel" class="btn-secondary">Cancelar</button>
-                    <button type="submit" class="btn-primary">
-                        <i class="fas fa-save"></i> Guardar
-                    </button>
-                </div>
             </form>
         </div>
     </div>
