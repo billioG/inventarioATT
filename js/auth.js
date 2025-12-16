@@ -1,159 +1,108 @@
-// Authentication Manager
+// js/auth.js - Solución Login Offline
 class AuthManager {
   constructor() {
     this.currentUser = null;
     this.currentProfile = null;
   }
 
-  // Initialize authentication
+  // Inicialización robusta: Prioriza acceso rápido
   async init() {
     try {
       console.log('Auth: Iniciando...');
       
-      // Check if Supabase is available
-      if (!supabaseClient.isAvailable()) {
-        console.log('Auth: Supabase no disponible, intentando modo offline...');
-        // Try to load profile from IndexedDB
-        const profiles = await dbManager.getAll('profile');
-        if (profiles && profiles.length > 0) {
-          this.currentUser = { id: profiles[0].id };
-          this.currentProfile = profiles[0];
-          console.log('Auth: ✓ Perfil cargado desde IndexedDB');
+      // 1. Intentar recuperar perfil local PRIMERO (para velocidad y offline)
+      const localProfiles = await dbManager.getAll('profile');
+      if (localProfiles && localProfiles.length > 0) {
+        this.currentUser = { id: localProfiles[0].id, email: localProfiles[0].email };
+        this.currentProfile = localProfiles[0];
+        console.log('Auth: Perfil local cargado (Modo Offline/Híbrido)');
+        
+        // Si hay internet, verificar sesión en segundo plano para actualizar
+        if (navigator.onLine && supabaseClient.isAvailable()) {
+            this.verifyOnlineSession();
+        }
+        return true;
+      }
+
+      // 2. Si no hay local, intentar online estricto
+      if (supabaseClient.isAvailable()) {
+        const session = await supabaseClient.getCurrentSession();
+        if (session) {
+          this.currentUser = session.user;
+          this.currentProfile = await supabaseClient.getProfile(session.user.id);
+          await dbManager.saveProfile(this.currentProfile);
           return true;
         }
-        console.log('Auth: No hay perfil en IndexedDB');
-        return false;
       }
 
-      console.log('Auth: Obteniendo sesión actual...');
-      const session = await supabaseClient.getCurrentSession();
-      
-      if (!session) {
-        console.log('Auth: No hay sesión activa');
-        return false;
-      }
-
-      console.log('Auth: ✓ Sesión encontrada, obteniendo usuario...');
-      this.currentUser = session.user;
-
-      console.log('Auth: Obteniendo perfil del servidor...');
-      // Load user profile
-      this.currentProfile = await supabaseClient.getProfile(session.user.id);
-      
-      console.log('Auth: ✓ Perfil obtenido, guardando en IndexedDB...');
-      // Save to IndexedDB for offline access
-      await dbManager.saveProfile(this.currentProfile);
-
-      console.log('Auth: ✓ Autenticación exitosa');
-      return true;
-
+      return false;
     } catch (error) {
-      console.error('Auth: Error en init:', error);
-      
-      // Try offline fallback
-      console.log('Auth: Intentando fallback offline...');
-      try {
-        const profiles = await dbManager.getAll('profile');
-        if (profiles && profiles.length > 0) {
-          this.currentProfile = profiles[0];
-          this.currentUser = { id: profiles[0].id };
-          console.log('Auth: ✓ Usando perfil de IndexedDB');
-          return true;
-        }
-      } catch (offlineError) {
-        console.error('Auth: Error en fallback offline:', offlineError);
-      }
-      
-      console.log('Auth: Sin autenticación válida');
+      console.error('Auth Init Error:', error);
+      // Si falla todo, pero teníamos datos locales, permitir acceso
+      if (this.currentProfile) return true;
       return false;
     }
   }
 
-  // Setup auth state change listener
-  setupAuthListener() {
-    if (!supabaseClient.isAvailable()) {
-      console.log('Auth: Listener no disponible sin Supabase');
-      return;
-    }
-
-    supabaseClient.client.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth: Estado cambió:', event);
-
-      if (event === 'SIGNED_OUT') {
-        this.currentUser = null;
-        this.currentProfile = null;
-        await dbManager.clear('profile');
-        window.location.reload();
-      }
-
-      if (event === 'SIGNED_IN' && session) {
-        this.currentUser = session.user;
-        this.currentProfile = await supabaseClient.getProfile(session.user.id);
-        await dbManager.saveProfile(this.currentProfile);
-      }
-    });
+  // Verificación silenciosa en segundo plano
+  async verifyOnlineSession() {
+    try {
+        const session = await supabaseClient.getCurrentSession();
+        if (session) {
+            const profile = await supabaseClient.getProfile(session.user.id);
+            if (profile) await dbManager.saveProfile(profile);
+        }
+    } catch (e) { console.warn('Auth check background failed', e); }
   }
 
-  // Sign in
-  async signIn(email, password) {
-    console.log('Auth: Intentando sign in...');
-    
-    if (!supabaseClient.isAvailable()) {
-      throw new Error('No se puede iniciar sesión sin conexión a internet');
+  setupAuthListener() {
+    if (supabaseClient.isAvailable()) {
+      supabaseClient.client.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          this.currentUser = session.user;
+          this.currentProfile = await supabaseClient.getProfile(session.user.id);
+          await dbManager.saveProfile(this.currentProfile);
+        } else if (event === 'SIGNED_OUT') {
+          this.currentUser = null;
+          this.currentProfile = null;
+          await dbManager.clear('profile');
+          window.location.reload();
+        }
+      });
     }
+  }
 
+  async signIn(email, password) {
+    if (!navigator.onLine) {
+        throw new Error('Necesitas internet para iniciar sesión por primera vez.');
+    }
+    
     try {
       const result = await supabaseClient.signIn(email, password);
       this.currentUser = result.user;
       this.currentProfile = result.profile;
-      console.log('Auth: ✓ Sign in exitoso');
+      // Guardar perfil inmediatamente para acceso offline futuro
+      await dbManager.saveProfile(this.currentProfile);
       return result;
     } catch (error) {
-      console.error('Auth: Error en sign in:', error);
+      console.error('Error en sign in:', error);
       throw error;
     }
   }
 
-  // Sign out
   async signOut() {
-    console.log('Auth: Cerrando sesión...');
-    
     try {
-      await supabaseClient.signOut();
-      this.currentUser = null;
-      this.currentProfile = null;
-      console.log('Auth: ✓ Sesión cerrada');
-    } catch (error) {
-      console.error('Auth: Error al cerrar sesión:', error);
-      throw error;
-    }
+        if (supabaseClient.isAvailable()) await supabaseClient.signOut();
+    } catch(e) { console.log('Logout offline'); }
+    
+    this.currentUser = null;
+    this.currentProfile = null;
+    await dbManager.clear('profile');
   }
 
-  // Get current profile
-  getCurrentProfile() {
-    return this.currentProfile;
-  }
-
-  // Get current user
-  getCurrentUser() {
-    return this.currentUser;
-  }
-
-  // Check if user is admin
-  isAdmin() {
-    return this.currentProfile?.role === 'admin';
-  }
-
-  // Check if user can edit
-  canEdit() {
-    return this.currentProfile?.role === 'admin' || this.currentProfile?.role === 'tecnico';
-  }
-
-  // Check if user can delete
-  canDelete() {
-    return this.currentProfile?.role === 'admin';
-  }
+  getCurrentProfile() { return this.currentProfile; }
+  isAdmin() { return this.currentProfile?.role === 'admin'; }
+  canEdit() { return this.currentProfile?.role === 'admin' || this.currentProfile?.role === 'tecnico'; }
 }
 
-// Export singleton
 const authManager = new AuthManager();
