@@ -1,3 +1,4 @@
+// js/sync.js - Sincronización Robusta
 class SyncManager {
   constructor() {
     this.isSyncing = false;
@@ -6,181 +7,162 @@ class SyncManager {
   }
 
   init() {
-    console.log('SyncManager Init');
+    console.log('Initializing Sync Manager v3...'); // Log nuevo para verificar versión
+
     window.addEventListener('online', () => this.handleOnline());
     window.addEventListener('offline', () => this.handleOffline());
 
-    // Sync periódica (cada 30s)
+    // 1. Sincronización INMEDIATA al cargar (con pequeño delay para asegurar DB lista)
+    if (navigator.onLine && supabaseClient.isAvailable()) {
+      setTimeout(() => {
+        console.log('Sync: Ejecutando carga inicial...');
+        this.syncAll(false); // false = silencioso
+      }, 1000);
+    }
+
+    // 2. Sincronización PERIÓDICA (Cada 30 segundos)
     this.syncInterval = setInterval(() => {
-      if (navigator.onLine && !this.isSyncing) this.syncAll(false);
+      if (navigator.onLine && !this.isSyncing && supabaseClient.isAvailable()) {
+        this.syncAll(false);
+      }
     }, 30000);
 
-    if (navigator.onLine) {
-        // Sync inicial rápida
-        setTimeout(() => this.syncAll(false), 1000);
-        this.setupRealtimeSync();
+    if (navigator.onLine && supabaseClient.isAvailable()) {
+      this.setupRealtimeSync();
     }
+
     this.updateSyncBadge();
   }
 
   handleOnline() {
-    this.updateGlobalStatus('online');
-    this.syncAll(true);
-    this.setupRealtimeSync();
+    console.log('Online detectado');
+    this.hideOfflineIndicator();
+    if (supabaseClient.isAvailable()) {
+      this.syncAll(true);
+      this.setupRealtimeSync();
+    }
   }
 
   handleOffline() {
-    this.updateGlobalStatus('offline');
-    if(this.realtimeSubscription) {
-        supabaseClient.unsubscribe(this.realtimeSubscription);
-        this.realtimeSubscription = null;
-    }
+    console.log('Offline detectado');
+    this.showOfflineIndicator();
   }
 
-  // --- CORRECCIÓN: Indicador Visual Global ---
-  // Busca o crea un elemento en el header para mostrar estado
-  updateGlobalStatus(state) {
-      let statusEl = document.getElementById('global-sync-status');
-      if (!statusEl) {
-          // Si no existe, lo inyectamos en el header acciones
-          const actions = document.querySelector('.header-actions');
-          if (actions) {
-              statusEl = document.createElement('div');
-              statusEl.id = 'global-sync-status';
-              statusEl.style.marginRight = '10px';
-              statusEl.style.fontSize = '12px';
-              statusEl.style.fontWeight = 'bold';
-              actions.insertBefore(statusEl, actions.firstChild);
-          }
-      }
-      
-      if(!statusEl) return;
-
-      if (state === 'syncing') {
-          statusEl.textContent = '🔄 Sincronizando...';
-          statusEl.style.color = 'orange';
-      } else if (state === 'offline') {
-          statusEl.textContent = '⚠️ Offline';
-          statusEl.style.color = 'gray';
-      } else if (state === 'online') {
-          statusEl.textContent = '☁️ Conectado';
-          statusEl.style.color = 'green';
-      } else if (state === 'error') {
-          statusEl.textContent = '❌ Error Sync';
-          statusEl.style.color = 'red';
-      }
-  }
-
+  // Método para llamar manualmente o tras guardar
   async triggerInstantSync() {
-    if (navigator.onLine && !this.isSyncing) {
-        await this.syncAll(true);
+    if (navigator.onLine && !this.isSyncing && supabaseClient.isAvailable()) {
+      console.log('⚡ Sync inmediata disparada');
+      await this.syncAll(true);
     }
   }
 
-  // --- CORRECCIÓN: Bloque finally para evitar que se "quede así" ---
-  async syncAll(showToastMsg = true) {
-    if (this.isSyncing || !navigator.onLine) return;
-    
+  async syncAll(showMessages = true) {
+    if (this.isSyncing || !navigator.onLine || !supabaseClient.isAvailable()) return;
+
     this.isSyncing = true;
-    this.updateGlobalStatus('syncing'); // Actualizar indicador visual
+    console.log(' Iniciando Sincronización...');
 
     try {
-      if (!supabaseClient.isAvailable()) throw new Error('Supabase no disponible');
-
-      // 1. Descargar cambios (Server -> Local)
+      // 1. BAJAR (Server -> Local)
       const serverTablets = await supabaseClient.getTablets();
-      for (const st of serverTablets) {
-          const lt = await dbManager.getTablet(st.id);
-          // Si no existe o ya estaba sincronizado, sobrescribir con el servidor
-          if (!lt || lt.synced) {
-              await dbManager.saveTablet({ ...st, synced: true });
-          }
+      if (serverTablets && serverTablets.length > 0) {
+        for (const t of serverTablets) {
+          // Guardar y marcar como sincronizado
+          await dbManager.saveTablet({ ...t, synced: true });
+        }
       }
 
-      // 2. Subir cambios (Local -> Server)
+      // 2. SUBIR (Local -> Server)
       const pending = await dbManager.getUnsyncedTablets();
-      for (const t of pending) {
+      if (pending.length > 0) {
+        console.log(`Subiendo ${pending.length} tablets...`);
+        for (const t of pending) {
           await this.syncTabletToServer(t);
+        }
       }
 
-      // 3. Procesar cola de eliminaciones/updates
+      // 3. COLA (Borrados/Updates pendientes)
       await this.processSyncQueue();
 
-      if (showToastMsg) showToast('Sincronización completada', 'success');
-      this.updateGlobalStatus('online');
+      console.log('Sync completado.');
+      if (showMessages) showToast('Sincronización completada', 'success');
 
-      // 4. Actualizar UI
+      // 4. ACTUALIZAR PANTALLA (Crítico para que veas los cambios)
       if (window.app) {
-          await window.app.loadData();
-          window.app.renderDashboard();
-          window.app.updateStatistics();
+        await window.app.loadData();
+        window.app.renderDashboard();
+        window.app.updateStatistics();
       }
 
     } catch (error) {
-      console.error('Sync Error:', error);
-      this.updateGlobalStatus('error');
-      if (showToastMsg) showToast('Error al sincronizar (revisar consola)', 'error');
+      console.error('Error Sync:', error);
+      if (showMessages && !error.message.includes('fetch')) {
+         showToast('Error sincronizando (revisa consola)', 'warning');
+      }
     } finally {
       this.isSyncing = false;
-      this.updateSyncBadge();
+      await this.updateSyncBadge();
     }
   }
 
-  async syncTabletToServer(t) {
-      const { id, synced, last_synced_at, ...data } = t;
-      let res;
+  async syncTabletToServer(tablet) {
+    try {
+      // Limpiar campos internos antes de enviar
+      const { id, synced, last_synced_at, ...cleanData } = tablet;
       
-      // Intentar update primero
-      try {
-          const check = await supabaseClient.getTablet(id);
-          if (check) {
-              res = await supabaseClient.updateTablet(id, data);
-          } else {
-              res = await supabaseClient.createTablet(data);
-          }
-      } catch (e) {
-          // Si falla creación por duplicado, intentar update buscando por código
-          if (e.code === '23505') {
-              const serverItems = await supabaseClient.getTablets({ search: data.codigo_unico });
-              const match = serverItems.find(i => i.codigo_unico === data.codigo_unico);
-              if (match) {
-                  res = await supabaseClient.updateTablet(match.id, data);
-              }
-          }
-      }
+      // Intentar Insertar
+      const { data, error } = await supabaseClient.client
+        .from('tablets')
+        .upsert({ ...cleanData, id: id }) // Upsert maneja insert/update automático
+        .select()
+        .single();
 
-      if (res) {
-          await dbManager.saveTablet({ ...t, id: res.id, synced: true });
-      }
+      if (error) throw error;
+
+      // Marcar como sync localmente
+      await dbManager.saveTablet({ ...tablet, synced: true });
+
+    } catch (e) {
+      console.error('Error subiendo tablet:', e);
+    }
   }
 
   async processSyncQueue() {
-      const queue = await dbManager.getUnsyncedQueue();
-      for (const item of queue) {
-          try {
-              if (item.operation === 'DELETE') {
-                  await supabaseClient.deleteTablet(item.record_id);
-              }
-              await dbManager.markQueueItemSynced(item.id);
-          } catch (e) { console.error('Queue error', e); }
+    const queue = await dbManager.getUnsyncedQueue();
+    for (const item of queue) {
+      if (item.operation === 'DELETE') {
+        await supabaseClient.deleteTablet(item.record_id);
       }
+      await dbManager.markQueueItemSynced(item.id);
+    }
   }
 
-  updateSyncBadge() { /* ... (igual que antes) ... */ }
+  // UI Helpers
+  showOfflineIndicator() { const el = document.getElementById('offline-indicator'); if(el) el.style.display='flex'; }
+  hideOfflineIndicator() { const el = document.getElementById('offline-indicator'); if(el) el.style.display='none'; }
   
+  async updateSyncBadge() {
+    const count = (await dbManager.getUnsyncedTablets()).length;
+    const badge = document.getElementById('sync-status');
+    const stat = document.getElementById('stat-pending');
+    if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
+    if (stat) stat.textContent = count;
+  }
+
   setupRealtimeSync() {
-      if(!supabaseClient.isAvailable()) return;
-      this.realtimeSubscription = supabaseClient.subscribeToTablets(async (payload) => {
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              await dbManager.saveTablet({ ...payload.new, synced: true });
-          } else if (payload.eventType === 'DELETE') {
-              await dbManager.deleteTablet(payload.old.id);
-          }
-          if (window.app) {
-             await window.app.loadData();
-             window.app.renderDashboard();
-          }
-      });
+    try {
+        supabaseClient.subscribeToTablets(async (payload) => {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                await dbManager.saveTablet({ ...payload.new, synced: true });
+            } else if (payload.eventType === 'DELETE') {
+                await dbManager.deleteTablet(payload.old.id);
+            }
+            if (window.app) {
+                await window.app.loadData();
+                window.app.renderDashboard();
+            }
+        });
+    } catch(e) { console.warn(e); }
   }
 }
 
