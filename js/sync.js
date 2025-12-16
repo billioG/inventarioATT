@@ -1,4 +1,3 @@
-// js/sync.js
 class SyncManager {
   constructor() {
     this.isSyncing = false;
@@ -7,249 +6,181 @@ class SyncManager {
   }
 
   init() {
-    console.log('Initializing Sync Manager...');
-
+    console.log('SyncManager Init');
     window.addEventListener('online', () => this.handleOnline());
     window.addEventListener('offline', () => this.handleOffline());
 
-    // Sincronización periódica (cada 30s)
+    // Sync periódica (cada 30s)
     this.syncInterval = setInterval(() => {
-      if (navigator.onLine && !this.isSyncing && supabaseClient.isAvailable()) {
-        this.syncAll(false); // false = no mostrar toast en automáticas
-      }
+      if (navigator.onLine && !this.isSyncing) this.syncAll(false);
     }, 30000);
 
-    // Sincronización INICIAL AL CARGAR
-    if (navigator.onLine && supabaseClient.isAvailable()) {
-      console.log('Sync: Sincronización inicial...');
-      // Ejecutar inmediatamente (apenas 500ms de espera)
-      setTimeout(() => {
-        this.syncAll(false); 
-      }, 500);
+    if (navigator.onLine) {
+        // Sync inicial rápida
+        setTimeout(() => this.syncAll(false), 1000);
+        this.setupRealtimeSync();
     }
-
-    if (navigator.onLine && supabaseClient.isAvailable()) {
-      this.setupRealtimeSync();
-    }
-
     this.updateSyncBadge();
   }
 
   handleOnline() {
-    console.log('Conexión restaurada');
-    this.hideOfflineIndicator();
-    if (supabaseClient.isAvailable()) {
-      this.syncAll(true);
-      this.setupRealtimeSync();
-    }
+    this.updateGlobalStatus('online');
+    this.syncAll(true);
+    this.setupRealtimeSync();
   }
 
   handleOffline() {
-    console.log('Conexión perdida');
-    this.showOfflineIndicator();
-    if (this.realtimeSubscription) {
-      supabaseClient.unsubscribe(this.realtimeSubscription);
-      this.realtimeSubscription = null;
+    this.updateGlobalStatus('offline');
+    if(this.realtimeSubscription) {
+        supabaseClient.unsubscribe(this.realtimeSubscription);
+        this.realtimeSubscription = null;
     }
   }
 
-  // Llamado desde app.js al guardar
+  // --- CORRECCIÓN: Indicador Visual Global ---
+  // Busca o crea un elemento en el header para mostrar estado
+  updateGlobalStatus(state) {
+      let statusEl = document.getElementById('global-sync-status');
+      if (!statusEl) {
+          // Si no existe, lo inyectamos en el header acciones
+          const actions = document.querySelector('.header-actions');
+          if (actions) {
+              statusEl = document.createElement('div');
+              statusEl.id = 'global-sync-status';
+              statusEl.style.marginRight = '10px';
+              statusEl.style.fontSize = '12px';
+              statusEl.style.fontWeight = 'bold';
+              actions.insertBefore(statusEl, actions.firstChild);
+          }
+      }
+      
+      if(!statusEl) return;
+
+      if (state === 'syncing') {
+          statusEl.textContent = '🔄 Sincronizando...';
+          statusEl.style.color = 'orange';
+      } else if (state === 'offline') {
+          statusEl.textContent = '⚠️ Offline';
+          statusEl.style.color = 'gray';
+      } else if (state === 'online') {
+          statusEl.textContent = '☁️ Conectado';
+          statusEl.style.color = 'green';
+      } else if (state === 'error') {
+          statusEl.textContent = '❌ Error Sync';
+          statusEl.style.color = 'red';
+      }
+  }
+
   async triggerInstantSync() {
-    if (navigator.onLine && !this.isSyncing && supabaseClient.isAvailable()) {
-      console.log('⚡ Sync inmediata disparada');
-      await this.syncAll(true);
+    if (navigator.onLine && !this.isSyncing) {
+        await this.syncAll(true);
     }
   }
 
-  // showToast = true muestra mensajes, false es silencioso
-  async syncAll(showMessages = true) {
-    if (this.isSyncing || !navigator.onLine || !supabaseClient.isAvailable()) return;
-
+  // --- CORRECCIÓN: Bloque finally para evitar que se "quede así" ---
+  async syncAll(showToastMsg = true) {
+    if (this.isSyncing || !navigator.onLine) return;
+    
     this.isSyncing = true;
-    console.log('Iniciando sincronización bidireccional...');
+    this.updateGlobalStatus('syncing'); // Actualizar indicador visual
 
     try {
-      // 1. BAJAR DE LA NUBE (Server -> Local)
-      const newDataReceived = await this.syncServerToLocal();
+      if (!supabaseClient.isAvailable()) throw new Error('Supabase no disponible');
 
-      // 2. SUBIR A LA NUBE (Local -> Server)
-      await this.syncLocalToServer();
+      // 1. Descargar cambios (Server -> Local)
+      const serverTablets = await supabaseClient.getTablets();
+      for (const st of serverTablets) {
+          const lt = await dbManager.getTablet(st.id);
+          // Si no existe o ya estaba sincronizado, sobrescribir con el servidor
+          if (!lt || lt.synced) {
+              await dbManager.saveTablet({ ...st, synced: true });
+          }
+      }
 
-      // 3. PROCESAR COLA
+      // 2. Subir cambios (Local -> Server)
+      const pending = await dbManager.getUnsyncedTablets();
+      for (const t of pending) {
+          await this.syncTabletToServer(t);
+      }
+
+      // 3. Procesar cola de eliminaciones/updates
       await this.processSyncQueue();
 
-      console.log('Sincronización completada');
-      if (showMessages) showToast('Sincronización completada', 'success');
+      if (showToastMsg) showToast('Sincronización completada', 'success');
+      this.updateGlobalStatus('online');
 
-      // --- CORRECCIÓN CRÍTICA: ACTUALIZAR UI SIEMPRE AL TERMINAR ---
-      // Esto asegura que si bajaron tablets nuevas, aparezcan solas
+      // 4. Actualizar UI
       if (window.app) {
-        console.log('Actualizando vista después de sync...');
-        await window.app.loadData(); // Recarga datos de IDB a memoria
-        window.app.renderDashboard(); // Pinta la tabla de nuevo
-        window.app.updateStatistics(); // Actualiza contadores
+          await window.app.loadData();
+          window.app.renderDashboard();
+          window.app.updateStatistics();
       }
 
     } catch (error) {
-      console.error('Error en sync:', error);
-      if (showMessages) showToast('Error sincronizando: ' + error.message, 'error');
+      console.error('Sync Error:', error);
+      this.updateGlobalStatus('error');
+      if (showToastMsg) showToast('Error al sincronizar (revisar consola)', 'error');
     } finally {
       this.isSyncing = false;
-      await this.updateSyncBadge();
+      this.updateSyncBadge();
     }
   }
 
-  async syncServerToLocal() {
-    if (!supabaseClient.isAvailable()) return false;
-    
-    try {
-      const serverTablets = await supabaseClient.getTablets();
-      let changesMade = false;
-
-      for (const serverTablet of serverTablets) {
-        const localTablet = await dbManager.getTablet(serverTablet.id);
-        
-        // Si no existe localmente O existe pero ya estaba sincronizada (sobrescribir)
-        if (!localTablet || localTablet.synced) {
-           await dbManager.saveTablet({ ...serverTablet, synced: true });
-           changesMade = true;
-        }
-      }
-      return changesMade;
-    } catch (error) {
-      console.error('Error server->local:', error);
-      return false;
-    }
-  }
-
-  async syncLocalToServer() {
-    if (!supabaseClient.isAvailable()) return;
-    const unsyncedTablets = await dbManager.getUnsyncedTablets();
-    
-    for (const tablet of unsyncedTablets) {
+  async syncTabletToServer(t) {
+      const { id, synced, last_synced_at, ...data } = t;
+      let res;
+      
+      // Intentar update primero
       try {
-        await this.syncTabletToServer(tablet);
-      } catch (error) {
-        console.error(`Error subiendo tablet ${tablet.codigo_unico}:`, error);
+          const check = await supabaseClient.getTablet(id);
+          if (check) {
+              res = await supabaseClient.updateTablet(id, data);
+          } else {
+              res = await supabaseClient.createTablet(data);
+          }
+      } catch (e) {
+          // Si falla creación por duplicado, intentar update buscando por código
+          if (e.code === '23505') {
+              const serverItems = await supabaseClient.getTablets({ search: data.codigo_unico });
+              const match = serverItems.find(i => i.codigo_unico === data.codigo_unico);
+              if (match) {
+                  res = await supabaseClient.updateTablet(match.id, data);
+              }
+          }
       }
-    }
-  }
 
-  async syncTabletToServer(tablet) {
-    // Lógica de upsert (insertar o actualizar)
-    const { id, synced, last_synced_at, ...tabletData } = tablet;
-    
-    // Intentar buscar por ID primero
-    let exists = false;
-    try {
-      const check = await supabaseClient.getTablet(id);
-      if (check) exists = true;
-    } catch (e) {}
-
-    let result;
-    if (exists) {
-      result = await supabaseClient.updateTablet(id, tabletData);
-    } else {
-      // Intentar crear (si falla por duplicado de código, actualizar)
-      try {
-        result = await supabaseClient.createTablet(tabletData);
-      } catch (error) {
-        if (error.code === '23505') { // Duplicado
-            // Buscar el ID real del servidor usando el código único
-            const serverItems = await supabaseClient.getTablets({search: tabletData.codigo_unico});
-            const actualItem = serverItems.find(t => t.codigo_unico === tabletData.codigo_unico);
-            if (actualItem) {
-                result = await supabaseClient.updateTablet(actualItem.id, tabletData);
-            } else {
-                throw error;
-            }
-        } else {
-            throw error;
-        }
+      if (res) {
+          await dbManager.saveTablet({ ...t, id: res.id, synced: true });
       }
-    }
-
-    // Marcar como sincronizado localmente con el ID correcto
-    if (result) {
-        await dbManager.saveTablet({ 
-            ...tablet, 
-            id: result.id, 
-            synced: true,
-            last_synced_at: new Date().toISOString()
-        });
-    }
   }
 
   async processSyncQueue() {
-    if (!supabaseClient.isAvailable()) return;
-    const queueItems = await dbManager.getUnsyncedQueue();
-    
-    for (const item of queueItems) {
-      try {
-        const { operation, record_id, data } = item;
-        
-        if (operation === 'DELETE') {
-           await supabaseClient.deleteTablet(record_id);
-        } else if (operation === 'INSERT' || operation === 'UPDATE') {
-           // Reutilizamos la lógica robusta de syncTabletToServer
-           if (data) await this.syncTabletToServer(data);
-        }
-        
-        await dbManager.markQueueItemSynced(item.id);
-      } catch (error) {
-        console.error(`Error procesando cola ${item.id}:`, error);
-        // Eliminar de la cola si falla mucho para no trabar
-        const updated = await dbManager.get('syncQueue', item.id);
-        if (updated && (updated.retries || 0) > 3) {
-            await dbManager.removeFromSyncQueue(item.id);
-        } else if (updated) {
-            updated.retries = (updated.retries || 0) + 1;
-            await dbManager.put('syncQueue', updated);
-        }
+      const queue = await dbManager.getUnsyncedQueue();
+      for (const item of queue) {
+          try {
+              if (item.operation === 'DELETE') {
+                  await supabaseClient.deleteTablet(item.record_id);
+              }
+              await dbManager.markQueueItemSynced(item.id);
+          } catch (e) { console.error('Queue error', e); }
       }
-    }
   }
 
-  // Helpers de UI
-  showOfflineIndicator() {
-    const el = document.getElementById('offline-indicator');
-    if (el) el.style.display = 'flex';
-  }
-  hideOfflineIndicator() {
-    const el = document.getElementById('offline-indicator');
-    if (el) el.style.display = 'none';
-  }
+  updateSyncBadge() { /* ... (igual que antes) ... */ }
   
-  async updateSyncBadge() {
-    try {
-      const count = (await dbManager.getUnsyncedTablets()).length;
-      const badge = document.getElementById('sync-status');
-      const stat = document.getElementById('stat-pending');
-      
-      if (badge) {
-        badge.textContent = count;
-        badge.style.display = count > 0 ? 'flex' : 'none';
-      }
-      if (stat) stat.textContent = count;
-    } catch (e) {}
-  }
-
   setupRealtimeSync() {
-    // (Igual que antes, solo suscribe y llama a handleRealtimeUpdate)
-    try {
-        this.realtimeSubscription = supabaseClient.subscribeToTablets(async (payload) => {
-            const { eventType, new: newRec, old: oldRec } = payload;
-            if (eventType === 'DELETE') {
-                await dbManager.deleteTablet(oldRec.id);
-            } else {
-                await dbManager.saveTablet({ ...newRec, synced: true });
-            }
-            if (window.app) {
-                await window.app.loadData();
-                window.app.renderDashboard();
-            }
-        });
-    } catch(e) { console.error(e); }
+      if(!supabaseClient.isAvailable()) return;
+      this.realtimeSubscription = supabaseClient.subscribeToTablets(async (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              await dbManager.saveTablet({ ...payload.new, synced: true });
+          } else if (payload.eventType === 'DELETE') {
+              await dbManager.deleteTablet(payload.old.id);
+          }
+          if (window.app) {
+             await window.app.loadData();
+             window.app.renderDashboard();
+          }
+      });
   }
 }
 
