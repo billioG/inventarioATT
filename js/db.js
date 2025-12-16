@@ -1,4 +1,4 @@
-// js/db.js - Optimizado y Corregido
+// js/db.js - Versión Corregida y Completa
 class DBManager {
   constructor() {
     this.dbName = 'TabletInventoryDB';
@@ -23,6 +23,7 @@ class DBManager {
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
         
+        // Store Tablets
         if (!db.objectStoreNames.contains('tablets')) {
           const store = db.createObjectStore('tablets', { keyPath: 'id' });
           store.createIndex('codigo_unico', 'codigo_unico', { unique: true });
@@ -30,12 +31,20 @@ class DBManager {
           store.createIndex('synced', 'synced', { unique: false });
         }
 
+        // Store SyncQueue
         if (!db.objectStoreNames.contains('syncQueue')) {
           db.createObjectStore('syncQueue', { keyPath: 'id', autoIncrement: true });
         }
 
+        // Store Profile
         if (!db.objectStoreNames.contains('profile')) {
           db.createObjectStore('profile', { keyPath: 'id' });
+        }
+
+        // Store Images (para caché offline de evidencias)
+        if (!db.objectStoreNames.contains('images')) {
+          const imgStore = db.createObjectStore('images', { keyPath: 'id' });
+          imgStore.createIndex('tablet_id', 'tablet_id', { unique: false });
         }
       };
     });
@@ -46,10 +55,19 @@ class DBManager {
     return this.db.transaction(storeName, mode).objectStore(storeName);
   }
 
-  // Operaciones genéricas optimizadas
+  // --- Operaciones Genéricas ---
+
   async put(storeName, data) {
     return new Promise((resolve, reject) => {
       const request = this.transaction(storeName, 'readwrite').put(data);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async get(storeName, key) {
+    return new Promise((resolve, reject) => {
+      const request = this.transaction(storeName).get(key);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -76,16 +94,24 @@ class DBManager {
   async saveTablet(tablet) {
     tablet.updated_at = new Date().toISOString();
     if (!tablet.created_at) tablet.created_at = tablet.updated_at;
-    // Asegurar que synced sea booleano
-    tablet.synced = !!tablet.synced; 
+    tablet.synced = !!tablet.synced; // Asegurar booleano
     return this.put('tablets', tablet);
+  }
+
+  // 🔥 RESTAURADO: Este método faltaba y causaba el error en sync.js
+  async getTablet(id) {
+    return this.get('tablets', id);
   }
 
   async getAllTablets() {
     return this.getAll('tablets');
   }
 
-  // Búsqueda optimizada (evita cargar todo si es posible, aunque para búsqueda parcial en IDB se requiere scan)
+  // 🔥 RESTAURADO: Necesario para eliminar tablets
+  async deleteTablet(id) {
+    return this.delete('tablets', id);
+  }
+
   async searchTablets(query) {
     const all = await this.getAllTablets();
     if (!query) return all;
@@ -104,6 +130,7 @@ class DBManager {
   }
 
   // --- Sync Queue ---
+
   async addToSyncQueue(operation, tableName, recordId, data) {
     return this.put('syncQueue', {
       operation,
@@ -120,18 +147,36 @@ class DBManager {
     return all.filter(item => !item.synced);
   }
   
+  // 🔥 RESTAURADO: sync.js suele usar esto para marcar éxito
+  async markQueueItemSynced(id) {
+    const item = await this.get('syncQueue', id);
+    if (item) {
+      item.synced = true;
+      item.synced_at = new Date().toISOString();
+      return this.put('syncQueue', item);
+    }
+  }
+
   async removeFromSyncQueue(id) {
     return this.delete('syncQueue', id);
   }
 
+  // --- Imágenes (Caché Offline) ---
+  
+  async saveImage(imageData) {
+    return this.put('images', imageData);
+  }
+
+  async getImage(id) {
+    return this.get('images', id);
+  }
+
   // --- Profile & Stats ---
+
   async saveProfile(profile) { return this.put('profile', profile); }
+  
   async getProfile(id) { 
-    return new Promise((resolve) => {
-      const req = this.transaction('profile').get(id);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => resolve(null);
-    });
+    return this.get('profile', id);
   }
 
   async getStats() {
@@ -145,4 +190,5 @@ class DBManager {
   }
 }
 
+// Export singleton
 const dbManager = new DBManager();
