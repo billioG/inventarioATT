@@ -1,496 +1,396 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="description" content="Sistema de inventario y mantenimiento de tablets - Fundación Carlos F. Novella">
-  <meta name="theme-color" content="#2d7a3e">
-  
-  <title>Inventario de Tablets - Fundación Carlos F. Novella</title>
-  
-  <!-- PWA Manifest -->
-  <link rel="manifest" href="manifest.json">
-  
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="assets/icons/icon-72.png">
-  <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
-  
-  <!-- Styles -->
-  <link rel="stylesheet" href="css/styles.css?v=3">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventario Tablets</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-
-  <!-- ================================
-       SPLASH SCREEN
-       ================================ -->
-  <div id="splash-screen" class="splash-screen">
-    <div class="splash-logo">📱</div>
-    <h1>Inventario de Tablets</h1>
-    <p>Fundación Carlos F. Novella</p>
-    <div class="splash-spinner"></div>
-  </div>
-
-  <!-- ================================
-       OFFLINE INDICATOR
-       ================================ -->
-  <div id="offline-indicator" class="offline-indicator" style="display: none;">
-    ⚠️ Sin conexión - Trabajando en modo offline
-  </div>
-
-  <!-- ================================
-       MAIN APP
-       ================================ -->
-  <div id="app" style="display: none;">
-    
-    <!-- ================================
-         HEADER
-         ================================ -->
+    <!-- Barra de navegación -->
     <header class="header">
-      <div class="header-content">
-        <div class="header-title">
-          <div class="header-logo">📱</div>
-          <div>
-            <h1>Inventario Tablets</h1>
-            <p>Fundación Carlos F. Novella</p>
-          </div>
-        </div>
-        <div class="header-actions">
-          <button id="sync-btn" class="header-btn" title="Sincronizar">
-            🔄
-            <span id="sync-status" class="sync-badge">0</span>
-          </button>
-          <button id="export-btn" class="header-btn" title="Exportar">
-            📥
-          </button>
-          <button id="user-menu-btn" class="header-btn" title="Usuario">
-            👤
-          </button>
-          <div id="user-menu" class="user-menu" style="display: none;">
-            <div class="user-menu-item">
-              <span id="user-name">Usuario</span>
+        <div class="header-content">
+            <div class="header-left">
+                <i class="fas fa-tablet-alt header-icon"></i>
+                <h1>Inventario Tablets</h1>
             </div>
-            <div class="user-menu-item">
-              <span id="user-role">Rol</span>
+            <div class="header-right">
+                <button id="btnSync" class="icon-btn" title="Sincronizar">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <button id="btnExport" class="icon-btn" title="Exportar">
+                    <i class="fas fa-file-export"></i>
+                </button>
+                <button id="btnUser" class="icon-btn" title="Usuario">
+                    <i class="fas fa-user"></i>
+                </button>
             </div>
-            <div class="user-menu-divider"></div>
-            <button id="logout-btn" class="user-menu-item">
-              🚪 Cerrar Sesión
-            </button>
-          </div>
         </div>
-      </div>
     </header>
 
-    <!-- ================================
-         DASHBOARD VIEW
-         ================================ -->
-    <div id="dashboard-view" class="view active">
-      <div class="container">
-        
-        <!-- Statistics -->
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-icon">💻</div>
-            <div class="stat-value" id="stat-total">0</div>
-            <div class="stat-label">Total Tablets</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon">✅</div>
-            <div class="stat-value" id="stat-good">0</div>
-            <div class="stat-label">Buen Estado</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon">⚠️</div>
-            <div class="stat-value" id="stat-attention">0</div>
-            <div class="stat-label">Requieren Atención</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon">⏳</div>
-            <div class="stat-value" id="stat-pending">0</div>
-            <div class="stat-label">Pendientes Sincronizar</div>
-          </div>
+    <!-- Pantalla de Login -->
+    <div id="loginScreen" class="screen active">
+        <div class="login-container">
+            <div class="login-card">
+                <i class="fas fa-tablet-alt login-icon"></i>
+                <h2>Inventario Tablets</h2>
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="loginEmail">Correo Electrónico</label>
+                        <input type="email" id="loginEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Contraseña</label>
+                        <input type="password" id="loginPassword" required>
+                    </div>
+                    <button type="submit" class="btn-primary">Iniciar Sesión</button>
+                </form>
+                <p class="login-footer">Sistema de Gestión de Inventario</p>
+            </div>
         </div>
-
-        <!-- Search and Filters -->
-        <div class="search-section">
-          <div class="search-bar">
-            <span class="search-icon">🔍</span>
-            <input type="text" id="search-input" placeholder="Buscar por código, modelo, sede...">
-          </div>
-          <div class="filters">
-            <select id="filter-sede">
-              <option value="">Todas las sedes</option>
-            </select>
-            <select id="filter-estado">
-              <option value="">Todos los estados</option>
-              <option value="Bueno">Bueno</option>
-              <option value="Funcional">Funcional</option>
-              <option value="Regular">Regular</option>
-              <option value="Con rayones">Con rayones</option>
-              <option value="Malo">Malo</option>
-              <option value="Roto">Roto</option>
-            </select>
-            <button id="export-btn" class="btn-secondary">
-              📥 Exportar
-            </button>
-          </div>
-        </div>
-
-        <!-- Tablets List -->
-        <div id="tablets-list" class="tablets-grid"></div>
-
-        <!-- Empty State -->
-        <div id="empty-state" class="empty-state">
-          <div class="empty-state-icon">📱</div>
-          <h3>No hay tablets registradas</h3>
-          <p>Agrega tu primera tablet usando el botón +</p>
-        </div>
-
-      </div>
     </div>
 
-    <!-- ================================
-         FORM VIEW
-         ================================ -->
-    <div id="form-view" class="view">
-      <div class="container">
-        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
-          <button id="back-btn" class="header-btn" style="background: var(--primary-green);">
-            ← 
-          </button>
-          <h2 id="form-title">Agregar Tablet</h2>
+    <!-- Pantalla Principal - Lista de Tablets -->
+    <div id="listScreen" class="screen">
+        <div class="container">
+            <!-- Barra de búsqueda y filtros -->
+            <div class="search-bar">
+                <div class="search-input-container">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchInput" placeholder="Buscar por código, serie, modelo...">
+                </div>
+                <button id="btnFilter" class="btn-secondary">
+                    <i class="fas fa-filter"></i> Filtros
+                </button>
+                <button id="btnAddNew" class="btn-primary">
+                    <i class="fas fa-plus"></i> Nuevo
+                </button>
+            </div>
+
+            <!-- Panel de filtros (inicialmente oculto) -->
+            <div id="filterPanel" class="filter-panel hidden">
+                <div class="filter-grid">
+                    <div class="form-group">
+                        <label>Sede</label>
+                        <select id="filterSede">
+                            <option value="">Todas</option>
+                            <option value="Sanarate (EP)">Sanarate (EP)</option>
+                            <option value="La Pedrera (LP)">La Pedrera (LP)</option>
+                            <option value="San Juan Sacatepéquez (SJ)">San Juan Sacatepéquez (SJ)</option>
+                            <option value="Santo Domingo Xenacoj (SDX)">Santo Domingo Xenacoj (SDX)</option>
+                            <option value="Sin Sede (N/A)">Sin Sede (N/A)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Estado de Pantalla</label>
+                        <select id="filterEstadoPantalla">
+                            <option value="">Todos</option>
+                            <option value="Bueno">Bueno</option>
+                            <option value="Rayado">Rayado</option>
+                            <option value="Quebrado">Quebrado</option>
+                            <option value="Con manchas">Con manchas</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Estado Puerto de Carga</label>
+                        <select id="filterEstadoPuerto">
+                            <option value="">Todos</option>
+                            <option value="Funciona">Funciona</option>
+                            <option value="No Funciona">No Funciona</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Rango de Fechas</label>
+                        <input type="date" id="filterFechaInicio">
+                        <input type="date" id="filterFechaFin">
+                    </div>
+                </div>
+                <div class="filter-actions">
+                    <button id="btnApplyFilters" class="btn-primary">Aplicar</button>
+                    <button id="btnClearFilters" class="btn-secondary">Limpiar</button>
+                </div>
+            </div>
+
+            <!-- Dashboard de estadísticas -->
+            <div class="dashboard">
+                <div class="stat-card">
+                    <i class="fas fa-tablet-alt"></i>
+                    <div>
+                        <h3 id="totalTablets">0</h3>
+                        <p>Total Tablets</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-check-circle"></i>
+                    <div>
+                        <h3 id="tabletsOk">0</h3>
+                        <p>En Buen Estado</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <div>
+                        <h3 id="tabletsIssues">0</h3>
+                        <p>Con Problemas</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-battery-half"></i>
+                    <div>
+                        <h3 id="avgBattery">0%</h3>
+                        <p>Batería Promedio</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lista de tablets -->
+            <div id="tabletsList" class="tablets-grid">
+                <!-- Las tarjetas se generarán dinámicamente -->
+            </div>
+
+            <!-- Mensaje de sin resultados -->
+            <div id="noResults" class="no-results hidden">
+                <i class="fas fa-inbox"></i>
+                <p>No se encontraron tablets</p>
+            </div>
         </div>
-
-        <form id="tablet-form">
-          
-          <!-- Escanear Información -->
-          <div class="form-section">
-            <h3>Escanear Información</h3>
-            <div class="camera-buttons">
-              <button type="button" id="start-camera-btn" class="btn-secondary">
-                📷 Usar Cámara
-              </button>
-              <button type="button" id="upload-image-btn" class="btn-secondary">
-                🖼️ Subir Foto
-              </button>
-              <input type="file" id="image-upload-input" accept="image/*" style="display: none;">
-            </div>
-            <div id="camera-preview" class="camera-preview">
-              <video id="camera-video" autoplay playsinline></video>
-              <canvas id="camera-canvas"></canvas>
-              <button type="button" id="capture-btn" class="btn-primary" style="margin-top: 1rem;">
-                📸 Capturar
-              </button>
-            </div>
-            <div id="ocr-preview" class="ocr-preview">
-              <img id="ocr-preview-image" alt="Preview">
-            </div>
-          </div>
-
-          <!-- Información Básica -->
-          <div class="form-section">
-            <h3>Información Básica</h3>
-            <div class="form-group">
-              <label for="codigo_unico">Código Único *</label>
-              <input type="text" id="codigo_unico" name="codigo_unico" required readonly>
-            </div>
-            <div class="form-group">
-              <label for="numero_serie">Número de Serie *</label>
-              <input type="text" id="numero_serie" name="numero_serie" required>
-            </div>
-            <div class="form-group">
-              <label for="modelo">Modelo *</label>
-              <input type="text" id="modelo" name="modelo" required>
-            </div>
-            <div class="form-group">
-              <label for="nombre_producto">Nombre del Producto</label>
-              <input type="text" id="nombre_producto" name="nombre_producto">
-            </div>
-            <div class="form-group">
-              <label for="numero_modelo">Número de Modelo</label>
-              <input type="text" id="numero_modelo" name="numero_modelo">
-            </div>
-            <div class="form-group">
-              <label for="sede_procedencia">Sede de Procedencia *</label>
-              <select id="sede_procedencia" name="sede_procedencia" required>
-                <option value="">Seleccionar sede</option>
-                <option value="Sede Central">Sanarate (EP)</option>
-                <option value="Sede Norte">La Pedrera (LP)</option>
-                <option value="Sede Sur">San Juan Sacatepéquez (SJ)</option>
-                <option value="Sede Este">Santo Domingo Xenacoj (SDX)</option>
-                <option value="Sede Oeste">Sin sede</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Información Técnica -->
-          <div class="form-section">
-            <h3>Información Técnica</h3>
-            <div class="form-group">
-              <label for="version_android">Versión de Android</label>
-              <input type="text" id="version_android" name="version_android" placeholder="Ej: Android 11">
-            </div>
-            <div class="form-group">
-              <label for="nivel_bateria">Nivel de Batería (%)</label>
-              <input type="range" id="nivel_bateria_slider" min="0" max="100" value="0" style="width: 100%;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
-                <input type="number" id="nivel_bateria" name="nivel_bateria" min="0" max="100" value="0" style="width: 80px;">
-                <span id="nivel_bateria_display" style="font-weight: 600; color: var(--primary-green);">0%</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Estado del Dispositivo -->
-          <div class="form-section">
-            <h3>Estado del Dispositivo</h3>
-            <div class="form-group">
-              <label for="estado_pantalla">Estado de Pantalla *</label>
-              <select id="estado_pantalla" name="estado_pantalla" required>
-                <option value="">Seleccionar estado</option>
-                <option value="Bueno">Bueno</option>
-                <option value="Con rayones">Con rayones</option>
-                <option value="Roto">Roto</option>
-                <option value="Otro">Otro</option>
-              </select>
-            </div>
-            <div id="estado_pantalla_otro_group" class="form-group" style="display: none;">
-              <label for="estado_pantalla_otro">Especificar otro estado de pantalla</label>
-              <input type="text" id="estado_pantalla_otro" name="estado_pantalla_otro">
-            </div>
-            <div class="form-group">
-              <label for="estado_puerto_carga">Estado del Puerto de Carga *</label>
-              <select id="estado_puerto_carga" name="estado_puerto_carga" required>
-                <option value="">Seleccionar estado</option>
-                <option value="Funcional">Funcional</option>
-                <option value="Suelto">Suelto</option>
-                <option value="Dañado">Dañado</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="estado_fisico_general">Estado Físico General *</label>
-              <select id="estado_fisico_general" name="estado_fisico_general" required>
-                <option value="">Seleccionar estado</option>
-                <option value="Excelente">Excelente</option>
-                <option value="Bueno">Bueno</option>
-                <option value="Regular">Regular</option>
-                <option value="Malo">Malo</option>
-                <option value="Otro">Otro</option>
-              </select>
-            </div>
-            <div id="estado_fisico_otro_group" class="form-group" style="display: none;">
-              <label for="estado_fisico_otro">Especificar otro estado físico</label>
-              <input type="text" id="estado_fisico_otro" name="estado_fisico_otro">
-            </div>
-            <div class="form-group">
-              <label class="checkbox-label">
-                <input type="checkbox" id="tiene_cargador" name="tiene_cargador">
-                <span>Tiene cargador</span>
-              </label>
-            </div>
-            <div class="form-group">
-              <label class="checkbox-label">
-                <input type="checkbox" id="tiene_cable" name="tiene_cable">
-                <span>Tiene cable de carga</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Observaciones -->
-          <div class="form-section">
-            <h3>Observaciones</h3>
-            <div class="form-group">
-              <label for="observaciones">Observaciones Adicionales</label>
-              <textarea id="observaciones" name="observaciones" rows="3"></textarea>
-            </div>
-            <div class="form-group">
-              <label for="hallazgos_relevantes">Hallazgos Relevantes</label>
-              <textarea id="hallazgos_relevantes" name="hallazgos_relevantes" rows="3"></textarea>
-            </div>
-            <div class="form-group">
-              <label for="fecha_mantenimiento">Fecha de Mantenimiento *</label>
-              <input type="date" id="fecha_mantenimiento" name="fecha_mantenimiento" required>
-            </div>
-          </div>
-
-          <!-- Fotos de Evidencia -->
-          <div class="form-section">
-            <h3>Fotos de Evidencia</h3>
-            <button type="button" id="add-evidence-btn" class="btn-secondary">
-              📷 Agregar Fotos
-            </button>
-            <input type="file" id="evidence-upload-input" accept="image/*" multiple style="display: none;">
-            <div id="evidence-preview" class="evidence-preview"></div>
-          </div>
-
-          <!-- Form Actions -->
-          <div class="form-actions">
-            <button type="button" id="cancel-form-btn" class="btn-secondary">
-              Cancelar
-            </button>
-            <button type="submit" class="btn-primary">
-              💾 Guardar
-            </button>
-          </div>
-
-        </form>
-      </div>
     </div>
 
-    <!-- ================================
-         DETAIL VIEW
-         ================================ -->
-    <div id="detail-view" class="view">
-      <div class="container">
-        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
-          <button id="detail-back-btn" class="header-btn" style="background: var(--primary-green);">
-            ←
-          </button>
-          <h2>Detalles de Tablet</h2>
-        </div>
+    <!-- Pantalla de Formulario (Crear/Editar) -->
+    <div id="formScreen" class="screen">
+        <div class="container">
+            <div class="form-header">
+                <button id="btnBack" class="btn-back">
+                    <i class="fas fa-arrow-left"></i> Volver
+                </button>
+                <h2 id="formTitle">Nueva Tablet</h2>
+            </div>
 
-        <div id="tablet-detail-content"></div>
+            <form id="tabletForm" class="tablet-form">
+                <!-- Información Básica -->
+                <div class="form-section">
+                    <h3>Información Básica</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="codigoUnico">Código Único *</label>
+                            <input type="text" id="codigoUnico" required>
+                            <button type="button" id="btnGenerarCodigo" class="btn-secondary btn-small">
+                                <i class="fas fa-magic"></i> Generar
+                            </button>
+                        </div>
+                        <div class="form-group">
+                            <label for="numeroSerie">Número de Serie *</label>
+                            <input type="text" id="numeroSerie" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="modelo">Modelo *</label>
+                            <input type="text" id="modelo" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="nombreProducto">Nombre del Producto</label>
+                            <input type="text" id="nombreProducto">
+                        </div>
+                        <div class="form-group">
+                            <label for="sede">Sede de Procedencia *</label>
+                            <select id="sede" required>
+                                <option value="">Seleccionar sede</option>
+                                <option value="Sanarate (EP)">Sanarate (EP)</option>
+                                <option value="La Pedrera (LP)">La Pedrera (LP)</option>
+                                <option value="San Juan Sacatepéquez (SJ)">San Juan Sacatepéquez (SJ)</option>
+                                <option value="Santo Domingo Xenacoj (SDX)">Santo Domingo Xenacoj (SDX)</option>
+                                <option value="Sin Sede (N/A)">Sin Sede (N/A)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
 
-        <div class="form-actions">
-          <button id="delete-tablet-btn" class="btn-danger">
-            🗑️ Eliminar
-          </button>
-          <button id="edit-tablet-btn" class="btn-primary">
-            ✏️ Editar
-          </button>
+                <!-- Información Técnica -->
+                <div class="form-section">
+                    <h3>Información Técnica</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="versionAndroid">Versión de Android</label>
+                            <input type="text" id="versionAndroid" placeholder="Ej: Android 11">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="nivelBateria">Nivel de Batería (%)</label>
+                            <input type="range" id="nivelBateria" min="0" max="100" value="0">
+                            <div class="battery-display">
+                                <input type="number" id="nivelBateriaNum" min="0" max="100" value="0">
+                                <span class="battery-percentage">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Estado del Dispositivo -->
+                <div class="form-section">
+                    <h3>Estado del Dispositivo</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="estadoPantalla">Estado de Pantalla *</label>
+                            <select id="estadoPantalla" required>
+                                <option value="Bueno">Bueno</option>
+                                <option value="Rayado">Rayado</option>
+                                <option value="Quebrado">Quebrado</option>
+                                <option value="Con manchas">Con manchas</option>
+                                <option value="Otro">Otro (especificar)</option>
+                            </select>
+                        </div>
+                        <div class="form-group hidden" id="estadoPantallaOtroGroup">
+                            <label for="estadoPantallaOtro">Especificar Estado</label>
+                            <input type="text" id="estadoPantallaOtro">
+                        </div>
+                        <div class="form-group">
+                            <label for="estadoPuertoCarga">Estado del Puerto de Carga *</label>
+                            <select id="estadoPuertoCarga" required>
+                                <option value="Funciona">Funciona</option>
+                                <option value="No Funciona">No Funciona</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="estadoFisicoGeneral">Estado Físico General *</label>
+                            <select id="estadoFisicoGeneral" required>
+                                <option value="Excelente">Excelente</option>
+                                <option value="Bueno">Bueno</option>
+                                <option value="Regular">Regular</option>
+                                <option value="Malo">Malo</option>
+                            </select>
+                        </div>
+                        <div class="form-group full-width">
+                            <div class="checkbox-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="tieneCargador">
+                                    <span>Tiene cargador</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="tieneCableCarga">
+                                    <span>Tiene cable de carga</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Observaciones -->
+                <div class="form-section">
+                    <h3>Observaciones y Mantenimiento</h3>
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label for="observacionesAdicionales">Observaciones Adicionales</label>
+                            <textarea id="observacionesAdicionales" rows="3"></textarea>
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="hallazgosRelevantes">Hallazgos Relevantes</label>
+                            <textarea id="hallazgosRelevantes" rows="3"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="fechaMantenimiento">Fecha de Mantenimiento *</label>
+                            <input type="date" id="fechaMantenimiento" required>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fotos de Evidencia -->
+                <div class="form-section">
+                    <h3>Fotos de Evidencia</h3>
+                    <div class="photo-upload-area">
+                        <button type="button" id="btnCamera" class="btn-photo">
+                            <i class="fas fa-camera"></i> Tomar Foto
+                        </button>
+                        <button type="button" id="btnGallery" class="btn-photo">
+                            <i class="fas fa-image"></i> Desde Galería
+                        </button>
+                        <button type="button" id="btnScanOCR" class="btn-photo">
+                            <i class="fas fa-scan"></i> Escanear Info (OCR)
+                        </button>
+                        <input type="file" id="fileInput" accept="image/*" multiple hidden>
+                        <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+                    </div>
+                    <div id="photoPreview" class="photo-preview">
+                        <!-- Las fotos se mostrarán aquí -->
+                    </div>
+                </div>
+
+                <!-- Botones de acción -->
+                <div class="form-actions">
+                    <button type="button" id="btnCancel" class="btn-secondary">Cancelar</button>
+                    <button type="submit" class="btn-primary">
+                        <i class="fas fa-save"></i> Guardar
+                    </button>
+                </div>
+            </form>
         </div>
-      </div>
     </div>
 
-    <!-- ================================
-         FAB (Floating Action Button)
-         ================================ -->
-    <button id="fab" class="fab" title="Agregar Tablet">
-      +
-    </button>
-
-  </div>
-
-  <!-- ================================
-       EXPORT MODAL
-       ================================ -->
-  <div id="export-modal" class="modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Exportar Datos</h2>
-        <button class="btn-close" data-modal="export-modal">✕</button>
-      </div>
-      <div class="modal-body">
-        <p>Selecciona el formato de exportación:</p>
-        <button id="export-excel" class="btn-primary btn-block" style="margin-bottom: 0.5rem;">
-          📊 Excel (.xlsx)
-        </button>
-        <button id="export-csv" class="btn-primary btn-block" style="margin-bottom: 0.5rem;">
-          📄 CSV
-        </button>
-        <button id="export-pdf" class="btn-primary btn-block">
-          📑 PDF
-        </button>
-      </div>
+    <!-- Modal de detalles de tablet -->
+    <div id="detailModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="detailTitle">Detalles de Tablet</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div id="detailBody" class="modal-body">
+                <!-- Los detalles se cargarán dinámicamente -->
+            </div>
+            <div class="modal-footer">
+                <button id="btnEdit" class="btn-primary">
+                    <i class="fas fa-edit"></i> Editar
+                </button>
+                <button id="btnDelete" class="btn-danger">
+                    <i class="fas fa-trash"></i> Eliminar
+                </button>
+                <button id="btnViewHistory" class="btn-secondary">
+                    <i class="fas fa-history"></i> Historial
+                </button>
+            </div>
+        </div>
     </div>
-  </div>
 
-  <!-- ================================
-       TOAST CONTAINER
-       ================================ -->
-  <div id="toast-container" class="toast-container"></div>
+    <!-- Modal de cámara/OCR -->
+    <div id="cameraModal" class="modal">
+        <div class="modal-content camera-modal">
+            <div class="modal-header">
+                <h2>Capturar Información</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <video id="cameraVideo" autoplay playsinline></video>
+                <canvas id="cameraCanvas" hidden></canvas>
+                <div id="ocrResult" class="ocr-result hidden">
+                    <h3>Información Detectada:</h3>
+                    <div id="ocrText"></div>
+                    <button id="btnApplyOCR" class="btn-primary">Aplicar a Formulario</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btnCapture" class="btn-primary">
+                    <i class="fas fa-camera"></i> Capturar
+                </button>
+                <button id="btnCancelCamera" class="btn-secondary">Cancelar</button>
+            </div>
+        </div>
+    </div>
 
-  <!-- ================================
-       SCRIPTS
-       ================================ -->
-  <script>
-    // Función para cargar scripts con fallback
-    function loadScriptWithFallback(src, fallbackSrc = null) {
-      return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = src;
-        script.onload = () => {
-          console.log(`✓ Loaded: ${src}`);
-          resolve();
-        };
-        script.onerror = () => {
-          console.warn(`✗ Failed to load: ${src}`);
-          if (fallbackSrc) {
-            console.log(`Trying fallback: ${fallbackSrc}`);
-            const fallbackScript = document.createElement('script');
-            fallbackScript.src = fallbackSrc;
-            fallbackScript.onload = () => {
-              console.log(`✓ Loaded fallback: ${fallbackSrc}`);
-              resolve();
-            };
-            fallbackScript.onerror = () => {
-              console.error(`✗ Failed to load fallback: ${fallbackSrc}`);
-              resolve();
-            };
-            document.head.appendChild(fallbackScript);
-          } else {
-            resolve();
-          }
-        };
-        document.head.appendChild(script);
-      });
-    }
+    <!-- Loader -->
+    <div id="loader" class="loader hidden">
+        <div class="spinner"></div>
+        <p>Cargando...</p>
+    </div>
 
-    // Cargar librerías CDN con fallbacks
-    async function loadLibraries() {
-      console.log('Loading external libraries...');
-      
-      await loadScriptWithFallback(
-        'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-        'https://unpkg.com/@supabase/supabase-js@2'
-      );
-      
-      await loadScriptWithFallback(
-        'https://cdn.jsdelivr.net/npm/tesseract.js@4',
-        'https://unpkg.com/tesseract.js@4'
-      );
-      
-      await loadScriptWithFallback(
-        'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-        'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js'
-      );
-      
-      await loadScriptWithFallback(
-        'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-        'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js'
-      );
-      
-      await loadScriptWithFallback(
-        'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js',
-        'https://unpkg.com/jspdf-autotable@3.5.31/dist/jspdf.plugin.autotable.min.js'
-      );
+    <!-- Toast notifications -->
+    <div id="toastContainer" class="toast-container"></div>
 
-      console.log('Libraries loaded, starting app...');
-      
-      // Cargar scripts de la aplicación EN ORDEN
-      const appScripts = [
-        'js/db.js',
-        'js/supabase-client.js',
-        'js/ocr.js',
-        'js/camera.js',
-        'js/auth.js',
-        'js/sync.js',
-        'js/export.js',
-        'js/app.js'
-      ];
-
-      for (const src of appScripts) {
-        await loadScriptWithFallback(src);
-      }
-      
-      console.log('All scripts loaded!');
-    }
-
-    // Iniciar carga
-    loadLibraries().catch(error => {
-      console.error('Error loading libraries:', error);
-      alert('Error al cargar la aplicación. Por favor recarga la página.');
-    });
-  </script>
-
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="js/supabase-client.js"></script>
+    <script src="js/ocr-handler.js"></script>
+    <script src="js/camera.js"></script>
+    <script src="js/reports.js"></script>
+    <script src="js/app.js"></script>
 </body>
 </html>
