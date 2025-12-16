@@ -1,3 +1,4 @@
+// js/ocr.js - Solución Campos Exactos
 class OCRManager {
   constructor() {
     this.worker = null;
@@ -18,16 +19,15 @@ class OCRManager {
       const worker = await this.init();
       const { data } = await worker.recognize(imageSource);
       this.hideStatus();
-      return this.parseInfo(data.text);
+      return this.parseTabletInfo(data.text);
     } catch (error) {
       this.hideStatus();
-      console.error(error);
+      console.error('OCR Error:', error);
       return {};
     }
   }
 
-  // --- CORRECCIÓN: Lógica de extracción estricta ---
-  parseInfo(text) {
+  parseTabletInfo(text) {
     const info = {
       nombre_producto: null,
       numero_modelo: null,
@@ -37,88 +37,62 @@ class OCRManager {
     };
 
     console.log('OCR Texto Crudo:', text);
-    
     // Limpiar líneas vacías
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 1);
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].toLowerCase();
-      const original = lines[i];
-
-      // 1. NOMBRE DEL PRODUCTO (Galaxy Tab...)
-      // Buscamos "Nombre del producto" y tomamos la siguiente línea o el valor después de :
-      if (line.includes('nombre del producto')) {
-        let val = this.extractValue(lines, i);
-        if (val) {
-            info.nombre_producto = val;
-            // REGLA: El mismo nombre va a número de modelo (según tu petición)
-            info.numero_modelo = val; 
+        const line = lines[i].toLowerCase();
+        
+        // 1. NOMBRE DEL PRODUCTO (Se copia a Nombre y a Número de Modelo)
+        if (line.includes('nombre del producto')) {
+            const val = this.extractValue(lines, i);
+            if (val) {
+                info.nombre_producto = val;
+                info.numero_modelo = val; // REGLA APLICADA
+            }
         }
-      }
 
-      // 2. NÚMERO DE SERIE
-      // Buscamos "Número de serie" o "Serie"
-      else if (line.includes('número de serie') || line.startsWith('serie')) {
-        let val = this.extractValue(lines, i);
-        if (val) {
-            // Eliminar espacios (R 9 W T -> R9WT)
-            info.numero_serie = val.replace(/\s+/g, '').toUpperCase();
+        // 2. MODELO (Nombre del modelo o Modelo)
+        // Se evita confundir con "Número de modelo"
+        else if ((line.includes('nombre del modelo') || line.startsWith('modelo')) && !line.includes('número')) {
+            info.modelo = this.extractValue(lines, i);
         }
-      }
 
-      // 3. MODELO (SM-T...)
-      // Buscamos "Modelo" o "Nombre del modelo" (evitando "número de modelo")
-      else if ((line.includes('modelo') || line.includes('nombre del modelo')) && !line.includes('número')) {
-         info.modelo = this.extractValue(lines, i);
-      }
-      
-      // 4. Fallback para Android
-      else if (line.includes('android')) {
-          const m = original.match(/Android\s+(\d+)/i);
-          if (m) info.version_android = m[1];
-      }
+        // 3. NÚMERO DE SERIE (Número de serie o Serie)
+        else if (line.includes('número de serie') || line.startsWith('serie')) {
+            const val = this.extractValue(lines, i);
+            if (val) {
+                // Eliminar espacios (R 9 W T -> R9WT)
+                info.numero_serie = val.replace(/\s+/g, '').toUpperCase();
+            }
+        }
+        
+        // Extra: Android
+        else if (line.includes('android')) {
+            const match = lines[i].match(/Android\s+(\d+)/i);
+            if (match) info.version_android = match[1];
+        }
     }
 
-    // --- Fallbacks si no encontró etiquetas ---
+    // Fallbacks si no encontró etiquetas
     if (!info.numero_serie) {
-        // Patrón Samsung Serial: R seguido de 9 a 11 caracteres alfanuméricos
         const match = text.match(/\b(R[A-Z0-9]{9,11})\b/i);
         if (match) info.numero_serie = match[0].toUpperCase();
-    }
-    
-    if (!info.nombre_producto) {
-        // Buscar "Galaxy Tab" directamente
-        const match = text.match(/Galaxy\s+Tab\s+[A-Z0-9\s]+/i);
-        if (match) {
-            info.nombre_producto = match[0].trim();
-            info.numero_modelo = match[0].trim();
-        }
     }
 
     return info;
   }
 
-  // Extrae valor después de ":" o de la siguiente línea
   extractValue(lines, index) {
-    const line = lines[index];
-    if (line.includes(':')) {
-        const parts = line.split(':');
-        if (parts[1] && parts[1].trim().length > 0) return parts[1].trim();
-    }
-    // Si no hay valor en la misma línea, mirar la siguiente
-    if (index + 1 < lines.length) {
-        return lines[index + 1].trim();
-    }
-    return null;
+      const line = lines[index];
+      if (line.includes(':')) return line.split(':')[1].trim();
+      if (index + 1 < lines.length) return lines[index + 1].trim();
+      return null;
   }
 
   showStatus(msg) {
     const el = document.getElementById('ocr-status');
-    if(el) { 
-        el.style.display='flex'; 
-        const txt = document.getElementById('ocr-status-text');
-        if(txt) txt.textContent=msg; 
-    }
+    if(el) { el.style.display='flex'; document.getElementById('ocr-status-text').textContent = msg; }
   }
   hideStatus() {
     const el = document.getElementById('ocr-status');
