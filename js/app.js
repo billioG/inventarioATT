@@ -1,4 +1,4 @@
-// Main Application
+// js/app.js - Código Completo y Corregido
 class TabletInventoryApp {
   constructor() {
     this.currentView = 'dashboard';
@@ -7,892 +7,205 @@ class TabletInventoryApp {
     this.filteredTablets = [];
   }
 
-  // Initialize application
+  // Inicialización principal
   async init() {
     try {
       console.log('=== INICIANDO APP ===');
       
-      // Agregar timeout de seguridad
+      // Timeout de seguridad para quitar splash si algo se traba
       this.forceHideSplashAfterTimeout();
-      
-      console.log('1. Initializing Tablet Inventory App...');
 
-      // Initialize IndexedDB
-      console.log('2. Inicializando IndexedDB...');
+      // 1. Base de datos local
       await dbManager.init();
-      console.log('✓ IndexedDB inicializado');
-
-      // Initialize Supabase
-      console.log('3. Inicializando Supabase...');
-      const supabaseInitialized = supabaseClient.init();
-      console.log('✓ Supabase inicializado:', supabaseInitialized ? 'Sí' : 'No (modo offline)');
-
-      // Initialize authentication
-      console.log('4. Verificando autenticación...');
+      
+      // 2. Autenticación
       const isAuthenticated = await authManager.init();
-      console.log('✓ Estado autenticación:', isAuthenticated);
-
       if (!isAuthenticated) {
-        console.log('5. Usuario no autenticado, mostrando login...');
         this.hideSplashScreen();
         this.showLoginPage();
         return;
       }
 
-      console.log('5. Usuario autenticado, continuando...');
-
-      // Setup auth listener
-      console.log('6. Configurando auth listener...');
+      // 3. Listeners y Servicios
       authManager.setupAuthListener();
-      console.log('✓ Auth listener configurado');
-
-      // Initialize sync manager
-      console.log('7. Inicializando sync manager...');
-      syncManager.init();
-      console.log('✓ Sync manager inicializado');
-
-      // Register service worker
-      console.log('8. Registrando service worker...');
+      syncManager.init(); // Inicia el proceso de sync en segundo plano
       await this.registerServiceWorker();
-      console.log('✓ Service worker registrado');
 
-      // Load initial data
-      console.log('9. Cargando datos iniciales...');
+      // 4. Cargar datos y Configurar UI
       await this.loadData();
-      console.log('✓ Datos cargados');
-
-      // Setup UI event listeners
-      console.log('10. Configurando event listeners...');
       this.setupEventListeners();
-      console.log('✓ Event listeners configurados');
-
-      // Hide splash screen
-      console.log('11. Ocultando splash screen...');
+      
+      // 5. Mostrar App
       this.hideSplashScreen();
-      console.log('✓ Splash screen oculto');
-
-      // Show app
-      console.log('12. Mostrando app...');
       this.showApp();
-      console.log('✓ App mostrada');
-
-      // Update UI
-      console.log('13. Actualizando UI...');
       this.updateUI();
-      console.log('✓ UI actualizada');
-
-      console.log('=== APP INICIALIZADA CORRECTAMENTE ===');
 
     } catch (error) {
-      console.error('❌ ERROR EN INICIALIZACIÓN:', error);
-      console.error('Stack:', error.stack);
-      
-      // Ocultar splash y mostrar error
+      console.error('❌ Error fatal en init:', error);
       this.hideSplashScreen();
-      
+      // Mostrar error amigable en pantalla
       document.body.innerHTML = `
-        <div style="padding: 20px; text-align: center; font-family: Arial;">
-          <h2 style="color: red;">Error al inicializar la aplicación</h2>
+        <div style="padding: 20px; text-align: center;">
+          <h2 style="color: red;">Error al iniciar</h2>
           <p>${error.message}</p>
-          <pre style="text-align: left; background: #f5f5f5; padding: 10px; border-radius: 5px; overflow: auto;">${error.stack}</pre>
-          <button onclick="location.reload()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px;">
-            Recargar página
-          </button>
-          <button onclick="localStorage.clear(); indexedDB.deleteDatabase('TabletInventoryDB'); location.reload()" 
-                  style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px; background: red; color: white; border: none;">
-            Limpiar todo y recargar
-          </button>
-        </div>
-      `;
+          <button onclick="location.reload()" style="padding: 10px 20px;">Recargar</button>
+        </div>`;
     }
   }
 
-  // Force hide splash screen after timeout
-  forceHideSplashAfterTimeout() {
-    setTimeout(() => {
-      const splash = document.getElementById('splash-screen');
-      if (splash && splash.style.display !== 'none') {
-        console.warn('⚠️ Forzando ocultamiento de splash screen por timeout');
-        this.hideSplashScreen();
-        
-        // Si hay error, mostrar mensaje
-        const appElement = document.getElementById('app');
-        if (!appElement || !appElement.style.display || appElement.style.display === 'none') {
-          // Solo mostrar mensaje si no se ha cargado la app
-          /* document.body.innerHTML = `...`; 
-          */
-        }
-      }
-    }, 10000); // 10 segundos
-  }
-
-  // Register service worker
-  async registerServiceWorker() {
-    if ('serviceWorker' in navigator) {
-      try {
-        // CORREGIDO: Detección dinámica de ruta
-        const swPath = window.location.hostname === 'localhost' ? '/sw.js' : './sw.js';
-        const registration = await navigator.serviceWorker.register(swPath);
-        console.log('Service Worker registered:', registration);
-
-        registration.addEventListener('updatefound', () => {
-          const newWorker = registration.installing;
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              showToast('Nueva versión disponible. Recarga la página para actualizar.', 'info');
-            }
-          });
-        });
-
-      } catch (error) {
-        console.error('Service Worker registration failed:', error);
-        console.log('Continuando sin Service Worker...');
-      }
-    }
-  }
-
-  // Show login page
-  showLoginPage() {
-    const splashScreen = document.getElementById('splash-screen');
-    const app = document.getElementById('app');
-    
-    if (splashScreen) splashScreen.style.display = 'none';
-    if (app) app.style.display = 'none';
-
-    // Evitar duplicar formulario si ya existe
-    if (document.getElementById('login-container')) return;
-
-    document.body.innerHTML += `
-      <div id="login-container" class="login-container">
-        <div class="login-card">
-          <div class="login-logo" style="font-size: 40px;">📱</div>
-          <h1>Inventario de Tablets</h1>
-          <p class="login-subtitle">Fundación Carlos F. Novella</p>
-          
-          <form id="login-form" class="login-form">
-            <div class="form-group">
-              <label for="login-email">Correo Electrónico</label>
-              <input type="email" id="login-email" name="email" required autocomplete="email">
-            </div>
-            
-            <div class="form-group">
-              <label for="login-password">Contraseña</label>
-              <input type="password" id="login-password" name="password" required autocomplete="current-password">
-            </div>
-            
-            <button type="submit" class="btn-primary btn-block">
-              Iniciar Sesión
-            </button>
-          </form>
-          
-          <div id="login-error" class="login-error" style="display: none;"></div>
-        </div>
-      </div>
-    `;
-
-    const loginForm = document.getElementById('login-form');
-    loginForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      await this.handleLogin(e);
-    });
-  }
-
-  // Handle login
-  async handleLogin(e) {
+  // Carga de datos
+  async loadData() {
     try {
-      const email = document.getElementById('login-email').value;
-      const password = document.getElementById('login-password').value;
-      const errorDiv = document.getElementById('login-error');
-
-      errorDiv.style.display = 'none';
-
-      showToast('Iniciando sesión...', 'info');
-
-      await authManager.signIn(email, password);
-
-      window.location.reload();
-
+      // Siempre confiamos en la BD local primero (Source of Truth inmediata)
+      this.tablets = await dbManager.getAllTablets();
+      this.filteredTablets = [...this.tablets];
+      this.updateStatistics();
+      this.renderDashboard(); // Renderizado inicial
     } catch (error) {
-      console.error('Login error:', error);
-      const errorDiv = document.getElementById('login-error');
-      errorDiv.textContent = error.message || 'Error al iniciar sesión';
-      errorDiv.style.display = 'block';
+      console.error('Error cargando datos:', error);
+      showToast('Error leyendo datos locales', 'error');
     }
   }
 
-  // Load data from IndexedDB
-// En js/app.js
-async loadData() {
-  try {
-    // Siempre carga lo que haya en la base de datos local
-    this.tablets = await dbManager.getAllTablets();
-    this.filteredTablets = [...this.tablets];
-    
-    // Si es la primera carga y está vacío, el syncManager se encargará de rellenarlo y llamar a renderDashboard
-    
-  } catch (error) {
-    console.error('Error cargando datos:', error);
-  }
-}
-
-  // Setup event listeners
-  setupEventListeners() {
-    // Navigation
-    document.getElementById('back-btn')?.addEventListener('click', () => this.showView('dashboard'));
-    document.getElementById('detail-back-btn')?.addEventListener('click', () => this.showView('dashboard'));
-    document.getElementById('admin-back-btn')?.addEventListener('click', () => this.showView('dashboard'));
-
-    // FAB - Add tablet
-    document.getElementById('fab')?.addEventListener('click', () => {
-      this.currentTablet = null;
-      this.showView('form');
-    });
-
-    // Search
-    document.getElementById('search-input')?.addEventListener('input', (e) => {
-      this.handleSearch(e.target.value);
-    });
-
-    // Filters
-    document.getElementById('filter-sede')?.addEventListener('change', () => this.applyFilters());
-    document.getElementById('filter-estado')?.addEventListener('change', () => this.applyFilters());
-
-    // Export
-    document.getElementById('export-btn')?.addEventListener('click', () => this.showExportModal());
-    document.getElementById('export-excel')?.addEventListener('click', () => this.exportData('excel'));
-    document.getElementById('export-csv')?.addEventListener('click', () => this.exportData('csv'));
-    document.getElementById('export-pdf')?.addEventListener('click', () => this.exportData('pdf'));
-
-    // Sync
-    document.getElementById('sync-btn')?.addEventListener('click', () => syncManager.manualSync());
-
-    // User menu
-    document.getElementById('user-menu-btn')?.addEventListener('click', () => this.toggleUserMenu());
-    document.getElementById('logout-btn')?.addEventListener('click', () => this.handleLogout());
-
-    // Form
-    document.getElementById('tablet-form')?.addEventListener('submit', (e) => this.handleFormSubmit(e));
-    document.getElementById('cancel-form-btn')?.addEventListener('click', () => this.showView('dashboard'));
-
-    // Camera
-    document.getElementById('start-camera-btn')?.addEventListener('click', () => this.startCamera());
-    document.getElementById('capture-btn')?.addEventListener('click', () => this.capturePhoto());
-    document.getElementById('upload-image-btn')?.addEventListener('click', () => {
-      document.getElementById('image-upload-input').click();
-    });
-    document.getElementById('image-upload-input')?.addEventListener('change', (e) => this.handleImageUpload(e));
-
-    // Evidence photos
-    document.getElementById('add-evidence-btn')?.addEventListener('click', () => {
-      document.getElementById('evidence-upload-input').click();
-    });
-    document.getElementById('evidence-upload-input')?.addEventListener('change', (e) => this.handleEvidenceUpload(e));
-
-    // Estado pantalla - show "otro" field
-    document.getElementById('estado_pantalla')?.addEventListener('change', (e) => {
-      const otroGroup = document.getElementById('estado_pantalla_otro_group');
-      if (e.target.value === 'Otro') {
-        otroGroup.style.display = 'block';
-      } else {
-        otroGroup.style.display = 'none';
-      }
-    });
-
-    // Estado físico general - show "otro" field
-    document.getElementById('estado_fisico_general')?.addEventListener('change', (e) => {
-      const otroGroup = document.getElementById('estado_fisico_otro_group');
-      if (e.target.value === 'Otro') {
-        otroGroup.style.display = 'block';
-      } else {
-        otroGroup.style.display = 'none';
-      }
-    });
-
-    // Battery slider
-    const batterySlider = document.getElementById('nivel_bateria_slider');
-    const batteryInput = document.getElementById('nivel_bateria');
-    const batteryDisplay = document.getElementById('nivel_bateria_display');
-
-    batterySlider?.addEventListener('input', (e) => {
-      batteryInput.value = e.target.value;
-      batteryDisplay.textContent = e.target.value + '%';
-    });
-
-    batteryInput?.addEventListener('input', (e) => {
-      batterySlider.value = e.target.value;
-      batteryDisplay.textContent = e.target.value + '%';
-    });
-
-    // Modal close buttons
-    document.querySelectorAll('.btn-close').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const modalId = e.target.dataset.modal;
-        this.hideModal(modalId);
-      });
-    });
-
-    // Click outside modal to close
-    window.addEventListener('click', (e) => {
-      if (e.target.classList.contains('modal')) {
-        e.target.style.display = 'none';
-      }
-    });
-  }
-
-  // Show view
-  showView(viewName) {
-    document.querySelectorAll('.view').forEach(view => {
-      view.classList.remove('active');
-    });
-
-    const view = document.getElementById(`${viewName}-view`);
-    if (view) {
-      view.classList.add('active');
-      this.currentView = viewName;
-
-      if (viewName === 'dashboard') {
-        this.renderDashboard();
-      } else if (viewName === 'form') {
-        this.renderForm();
-      }
-    }
-  }
-
-  // Render dashboard
-  async renderDashboard() {
-    await this.loadData();
-    this.updateStatistics();
-    this.updateFilterOptions();
-    this.renderTabletsList();
-  }
-
-  // Update statistics
-  async updateStatistics() {
-    const stats = await dbManager.getStats();
-
-    document.getElementById('stat-total').textContent = stats.total;
-    document.getElementById('stat-good').textContent = stats.good;
-    document.getElementById('stat-attention').textContent = stats.attention;
-    document.getElementById('stat-pending').textContent = stats.pending;
-  }
-
-  // Update filter options
-  updateFilterOptions() {
-    const sedes = [...new Set(this.tablets.map(t => t.sede_procedencia))];
-    const sedeSelect = document.getElementById('filter-sede');
-
-    if (sedeSelect) {
-      sedeSelect.innerHTML = '<option value="">Todas las sedes</option>';
-      sedes.forEach(sede => {
-        const option = document.createElement('option');
-        option.value = sede;
-        option.textContent = sede;
-        sedeSelect.appendChild(option);
-      });
-    }
-  }
-
-  // Render tablets list
-  renderTabletsList() {
-    const container = document.getElementById('tablets-list');
-    const emptyState = document.getElementById('empty-state');
-
-    if (!container) return;
-
-    container.innerHTML = '';
-
-    if (this.filteredTablets.length === 0) {
-      emptyState.style.display = 'flex';
-      return;
-    }
-
-    emptyState.style.display = 'none';
-
-    this.filteredTablets.forEach(tablet => {
-      const card = this.createTabletCard(tablet);
-      container.appendChild(card);
-    });
-  }
-
-  // Create tablet card
+  // --- 1. TARJETAS VISUALES CORREGIDAS (UI) ---
   createTabletCard(tablet) {
     const card = document.createElement('div');
     card.className = 'tablet-card';
     card.onclick = () => this.showTabletDetail(tablet.id);
 
+    // Clase para el color del estado (Bueno, Malo, etc.)
     const statusClass = this.getStatusClass(tablet.estado_pantalla);
-    const syncIcon = tablet.synced ? '' : '<span class="sync-pending-icon" title="Pendiente sincronizar">⚠</span>';
+    
+    // Icono de Sincronización
+    // Si synced es true -> Nube Verde. Si es false -> Nube Naranja/Alerta
+    const syncIcon = tablet.synced 
+      ? '<span style="color: green; font-size: 1.2em;" title="Sincronizado">☁️✅</span>' 
+      : '<span style="color: orange; font-weight: bold; font-size: 1.2em;" title="Pendiente de subir">☁️⚠️</span>';
 
+    // Formateo de fecha
+    const fecha = this.formatDate(tablet.fecha_mantenimiento);
+
+    // ESTRUCTURA DE LA TARJETA
+    // Muestra: Nombre Producto (Título), Serie (Abajo), Icono Sync, Sede, Estado
     card.innerHTML = `
       <div class="tablet-card-header">
-        <h3>${tablet.codigo_unico}</h3>
-        ${syncIcon}
+        <h3 style="font-size: 1rem; margin: 0;">${tablet.nombre_producto || 'Producto Desconocido'}</h3>
+        <div>${syncIcon}</div>
       </div>
       <div class="tablet-card-body">
-        <p class="tablet-model">${tablet.modelo || 'Sin modelo'}</p>
-        <p class="tablet-sede">${tablet.sede_procedencia || 'Sin sede'}</p>
-        <div class="tablet-status">
+        <p style="margin: 5px 0; font-size: 0.9rem; color: #555;">
+          <strong>Serie:</strong> ${tablet.numero_serie || 'S/N'}
+        </p>
+        <p class="tablet-sede" style="margin: 5px 0;">📍 ${tablet.sede_procedencia || 'Sin sede'}</p>
+        
+        <div class="tablet-status" style="margin-top: 8px;">
           <span class="status-badge ${statusClass}">${tablet.estado_pantalla}</span>
         </div>
       </div>
       <div class="tablet-card-footer">
-        <span class="tablet-date">${this.formatDate(tablet.fecha_mantenimiento)}</span>
-        <span class="tablet-battery">${tablet.nivel_bateria || 0}%</span>
+        <span class="tablet-date">📅 ${fecha}</span>
+        <span class="tablet-battery">🔋 ${tablet.nivel_bateria || 0}%</span>
       </div>
     `;
 
     return card;
   }
 
-  // Get status class for badge
-  getStatusClass(estado) {
-    switch (estado) {
-      case 'Bueno':
-      case 'Funcional':
-        return 'status-good';
-      case 'Regular':
-      case 'Con rayones':
-        return 'status-warning';
-      case 'Malo':
-      case 'Roto':
-        return 'status-danger';
-      default:
-        return 'status-default';
-    }
-  }
-
-  // Show tablet detail
-  async showTabletDetail(tabletId) {
-    try {
-      const tablet = await dbManager.getTablet(tabletId);
-      
-      if (!tablet) {
-        showToast('Tablet no encontrada', 'error');
-        return;
-      }
-
-      this.currentTablet = tablet;
-
-      const content = document.getElementById('tablet-detail-content');
-      if (!content) return;
-
-      content.innerHTML = `
-        <div class="detail-section">
-          <h3>Información Básica</h3>
-          <div class="detail-grid">
-            <div class="detail-item">
-              <label>Código Único</label>
-              <p>${tablet.codigo_unico || '-'}</p>
-            </div>
-            <div class="detail-item">
-              <label>Modelo</label>
-              <p>${tablet.modelo || '-'}</p>
-            </div>
-            <div class="detail-item">
-              <label>Número de Serie</label>
-              <p>${tablet.numero_serie || '-'}</p>
-            </div>
-            <div class="detail-item">
-              <label>Sede de Procedencia</label>
-              <p>${tablet.sede_procedencia || '-'}</p>
-            </div>
-            ${tablet.nombre_producto ? `
-              <div class="detail-item">
-                <label>Nombre del Producto</label>
-                <p>${tablet.nombre_producto}</p>
-              </div>
-            ` : ''}
-            ${tablet.numero_modelo ? `
-              <div class="detail-item">
-                <label>Número de Modelo</label>
-                <p>${tablet.numero_modelo}</p>
-              </div>
-            ` : ''}
-          </div>
-        </div>
-
-        <div class="detail-section">
-          <h3>Información Técnica</h3>
-          <div class="detail-grid">
-            ${tablet.version_android ? `
-              <div class="detail-item">
-                <label>Versión de Android</label>
-                <p>${tablet.version_android}</p>
-              </div>
-            ` : ''}
-            <div class="detail-item">
-              <label>Nivel de Batería</label>
-              <div class="battery-indicator">
-                <div class="battery-bar" style="width: ${tablet.nivel_bateria || 0}%"></div>
-                <span>${tablet.nivel_bateria || 0}%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="detail-section">
-          <h3>Estado del Dispositivo</h3>
-          <div class="detail-grid">
-            <div class="detail-item">
-              <label>Estado de Pantalla</label>
-              <p><span class="status-badge ${this.getStatusClass(tablet.estado_pantalla)}">${tablet.estado_pantalla}</span></p>
-              ${tablet.estado_pantalla_otro ? `<p class="detail-note">${tablet.estado_pantalla_otro}</p>` : ''}
-            </div>
-            <div class="detail-item">
-              <label>Estado Puerto de Carga</label>
-              <p>${tablet.estado_puerto_carga || '-'}</p>
-            </div>
-            <div class="detail-item">
-              <label>Estado Físico General</label>
-              <p>${tablet.estado_fisico_general || '-'}</p>
-              ${tablet.estado_fisico_otro ? `<p class="detail-note">${tablet.estado_fisico_otro}</p>` : ''}
-            </div>
-            <div class="detail-item">
-              <label>Accesorios</label>
-              <p>
-                ${tablet.tiene_cargador ? '✓ Cargador' : '✗ Sin cargador'}<br>
-                ${tablet.tiene_cable ? '✓ Cable de carga' : '✗ Sin cable'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        ${tablet.observaciones || tablet.hallazgos_relevantes ? `
-          <div class="detail-section">
-            <h3>Observaciones</h3>
-            ${tablet.observaciones ? `
-              <div class="detail-item">
-                <label>Observaciones Adicionales</label>
-                <p>${tablet.observaciones}</p>
-              </div>
-            ` : ''}
-            ${tablet.hallazgos_relevantes ? `
-              <div class="detail-item">
-                <label>Hallazgos Relevantes</label>
-                <p>${tablet.hallazgos_relevantes}</p>
-              </div>
-            ` : ''}
-          </div>
-        ` : ''}
-
-        ${tablet.fotos_evidencia && tablet.fotos_evidencia.length > 0 ? `
-          <div class="detail-section">
-            <h3>Fotos de Evidencia</h3>
-            <div class="evidence-gallery">
-              ${tablet.fotos_evidencia.map(foto => `
-                <img src="${foto}" alt="Evidencia" class="evidence-image">
-              `).join('')}
-            </div>
-          </div>
-        ` : ''}
-
-        <div class="detail-section">
-          <h3>Información de Registro</h3>
-          <div class="detail-grid">
-            <div class="detail-item">
-              <label>Fecha de Mantenimiento</label>
-              <p>${this.formatDate(tablet.fecha_mantenimiento)}</p>
-            </div>
-            <div class="detail-item">
-              <label>Fecha de Registro</label>
-              <p>${this.formatDateTime(tablet.created_at)}</p>
-            </div>
-            ${tablet.updated_at && tablet.updated_at !== tablet.created_at ? `
-              <div class="detail-item">
-                <label>Última Actualización</label>
-                <p>${this.formatDateTime(tablet.updated_at)}</p>
-              </div>
-            ` : ''}
-            <div class="detail-item">
-              <label>Estado de Sincronización</label>
-              <p>${tablet.synced ? '✓ Sincronizado' : '⚠ Pendiente de sincronizar'}</p>
-            </div>
-          </div>
-        </div>
-      `;
-
-      const editBtn = document.getElementById('edit-tablet-btn');
-      const deleteBtn = document.getElementById('delete-tablet-btn');
-
-      if (editBtn) {
-        editBtn.onclick = () => this.editTablet(tablet.id);
-        if (!authManager.canEdit()) {
-          editBtn.style.display = 'none';
-        }
-      }
-
-      if (deleteBtn) {
-        deleteBtn.onclick = () => this.deleteTablet(tablet.id);
-        if (!authManager.isAdmin()) {
-          deleteBtn.style.display = 'none';
-        }
-      }
-
-      this.showView('detail');
-
-    } catch (error) {
-      console.error('Show tablet detail error:', error);
-      showToast('Error al cargar detalles: ' + error.message, 'error');
-    }
-  }
-
-  // Edit tablet
-  async editTablet(tabletId) {
-    try {
-      const tablet = await dbManager.getTablet(tabletId);
-      
-      if (!tablet) {
-        showToast('Tablet no encontrada', 'error');
-        return;
-      }
-
-      this.currentTablet = tablet;
-      this.showView('form');
-      this.populateForm(tablet);
-
-    } catch (error) {
-      console.error('Edit tablet error:', error);
-      showToast('Error al editar tablet: ' + error.message, 'error');
-    }
-  }
-
-  // Delete tablet
-  async deleteTablet(tabletId) {
-    if (!confirm('¿Estás seguro de que deseas eliminar esta tablet? Esta acción no se puede deshacer.')) {
-      return;
-    }
-
-    try {
-      await dbManager.deleteTablet(tabletId);
-
-      // Cola de borrado
-      await dbManager.addToSyncQueue('DELETE', 'tablets', tabletId, null);
-      
-      // Intentar sync inmediato
-      syncManager.triggerInstantSync().catch(e => console.log('Sync delete:', e));
-
-      showToast('Tablet eliminada exitosamente', 'success');
-      this.showView('dashboard');
-
-    } catch (error) {
-      console.error('Delete tablet error:', error);
-      showToast('Error al eliminar tablet: ' + error.message, 'error');
-    }
-  }
-
-  // Render form
-  renderForm() {
-    const formTitle = document.getElementById('form-title');
-    const form = document.getElementById('tablet-form');
-    const codigoInput = document.getElementById('codigo_unico');
-
-    if (this.currentTablet) {
-      formTitle.textContent = 'Editar Tablet';
-      this.populateForm(this.currentTablet);
-      
-      // En modo edición, permitir editar código solo si es admin
-      if (authManager.isAdmin()) {
-        codigoInput.readOnly = false;
-        codigoInput.style.backgroundColor = '#fff';
-      } else {
-        codigoInput.readOnly = true;
-        codigoInput.style.backgroundColor = '#f3f4f6';
-      }
-    } else {
-      formTitle.textContent = 'Agregar Tablet';
-      form.reset();
-      
-      // Generar código automático para nueva tablet
-      codigoInput.value = this.generateTabletCode();
-      codigoInput.readOnly = true;
-      codigoInput.style.backgroundColor = '#f3f4f6';
-      
-      // Set default date
-      const today = new Date().toISOString().split('T')[0];
-      document.getElementById('fecha_mantenimiento').value = today;
-    }
-  }
-
-  // Populate form with tablet data
-  populateForm(tablet) {
-    // Basic info
-    document.getElementById('codigo_unico').value = tablet.codigo_unico || '';
-    document.getElementById('numero_serie').value = tablet.numero_serie || '';
-    document.getElementById('modelo').value = tablet.modelo || '';
-    document.getElementById('nombre_producto').value = tablet.nombre_producto || '';
-    document.getElementById('numero_modelo').value = tablet.numero_modelo || '';
-    document.getElementById('sede_procedencia').value = tablet.sede_procedencia || '';
-
-    // Technical info
-    document.getElementById('version_android').value = tablet.version_android || '';
-    document.getElementById('nivel_bateria').value = tablet.nivel_bateria || 0;
-    document.getElementById('nivel_bateria_slider').value = tablet.nivel_bateria || 0;
-    document.getElementById('nivel_bateria_display').textContent = (tablet.nivel_bateria || 0) + '%';
-
-    // Device status
-    document.getElementById('estado_pantalla').value = tablet.estado_pantalla || '';
-    
-    if (tablet.estado_pantalla === 'Otro') {
-      document.getElementById('estado_pantalla_otro_group').style.display = 'block';
-      document.getElementById('estado_pantalla_otro').value = tablet.estado_pantalla_otro || '';
-    }
-
-    document.getElementById('estado_puerto_carga').value = tablet.estado_puerto_carga || '';
-    
-    // Estado físico general con soporte para "Otro"
-    document.getElementById('estado_fisico_general').value = tablet.estado_fisico_general || '';
-    
-    if (tablet.estado_fisico_general === 'Otro') {
-      document.getElementById('estado_fisico_otro_group').style.display = 'block';
-      document.getElementById('estado_fisico_otro').value = tablet.estado_fisico_otro || '';
-    }
-    
-    document.getElementById('tiene_cargador').checked = tablet.tiene_cargador || false;
-    document.getElementById('tiene_cable').checked = tablet.tiene_cable || false;
-
-    // Observations
-    document.getElementById('observaciones').value = tablet.observaciones || '';
-    document.getElementById('hallazgos_relevantes').value = tablet.hallazgos_relevantes || '';
-    document.getElementById('fecha_mantenimiento').value = tablet.fecha_mantenimiento || '';
-  }
-
-  // MEJORADO: Handle form submit con Sincronización Inmediata
+  // --- 2. MANEJO DEL FORMULARIO Y GUARDADO (Sync Inmediato) ---
   async handleFormSubmit(e) {
     e.preventDefault();
-
+    
     try {
       const formData = new FormData(e.target);
+      
+      // Obtener valor EXACTO del select de sede
+      const sedeElement = document.getElementById('sede_procedencia');
+      const sedeValue = sedeElement ? sedeElement.value : formData.get('sede_procedencia');
+
+      // Construir objeto de datos
       const tabletData = {
         codigo_unico: formData.get('codigo_unico'),
         numero_serie: formData.get('numero_serie'),
         modelo: formData.get('modelo'),
-        nombre_producto: formData.get('nombre_producto') || null,
-        numero_modelo: formData.get('numero_modelo') || null,
-        sede_procedencia: formData.get('sede_procedencia'),
-        version_android: formData.get('version_android') || null,
-        nivel_bateria: parseInt(formData.get('nivel_bateria')) || null,
+        nombre_producto: formData.get('nombre_producto'),
+        numero_modelo: formData.get('numero_modelo'),
+        sede_procedencia: sedeValue, // Usamos el valor capturado explícitamente
+        version_android: formData.get('version_android'),
+        nivel_bateria: parseInt(formData.get('nivel_bateria')) || 0,
         estado_pantalla: formData.get('estado_pantalla'),
-        estado_pantalla_otro: formData.get('estado_pantalla_otro') || null,
+        estado_pantalla_otro: formData.get('estado_pantalla_otro'),
         estado_puerto_carga: formData.get('estado_puerto_carga'),
         estado_fisico_general: formData.get('estado_fisico_general'),
-        estado_fisico_otro: formData.get('estado_fisico_otro') || null,
+        estado_fisico_otro: formData.get('estado_fisico_otro'),
         tiene_cargador: formData.get('tiene_cargador') === 'on',
         tiene_cable: formData.get('tiene_cable') === 'on',
-        observaciones: formData.get('observaciones') || null,
-        hallazgos_relevantes: formData.get('hallazgos_relevantes') || null,
+        observaciones: formData.get('observaciones'),
+        hallazgos_relevantes: formData.get('hallazgos_relevantes'),
         fecha_mantenimiento: formData.get('fecha_mantenimiento'),
-        synced: false // Siempre empieza como no sincronizado
+        
+        // Al guardar manualmente, SIEMPRE inicia como no sincronizado
+        synced: false,
+        updated_at: new Date().toISOString()
       };
 
       if (this.currentTablet) {
         // --- EDICIÓN ---
         tabletData.id = this.currentTablet.id;
-        
-        // 1. Guardar localmente
-        await dbManager.saveTablet(tabletData);
-        
-        // 2. Encolar actualización
-        await dbManager.addToSyncQueue('UPDATE', 'tablets', tabletData.id, tabletData);
+        tabletData.created_at = this.currentTablet.created_at; // Mantener fecha creación
 
-        showToast('Tablet guardada localmente', 'success');
+        // 1. Guardar en BD Local
+        await dbManager.saveTablet(tabletData);
+        // 2. Encolar para sync
+        await dbManager.addToSyncQueue('UPDATE', 'tablets', tabletData.id, tabletData);
+        
+        showToast('Actualizado localmente. Subiendo...', 'success');
       } else {
         // --- CREACIÓN ---
-        tabletData.id = this.generateUUID(); // ID seguro
+        tabletData.id = this.generateUUID();
+        tabletData.created_at = new Date().toISOString();
         
-        // Validar duplicado local
-        const existingLocal = await dbManager.searchTablets(tabletData.codigo_unico);
-        if (existingLocal.length > 0) {
-          const useExisting = confirm('Ya existe una tablet con este código. ¿Deseas actualizarla?');
-          if (useExisting) {
-            tabletData.id = existingLocal[0].id;
-            await dbManager.saveTablet(tabletData);
-            await dbManager.addToSyncQueue('UPDATE', 'tablets', tabletData.id, tabletData);
-          } else {
-            return;
-          }
-        } else {
-          // 1. Guardar localmente
-          await dbManager.saveTablet(tabletData);
-          // 2. Encolar inserción
-          await dbManager.addToSyncQueue('INSERT', 'tablets', tabletData.id, tabletData);
-        }
+        // 1. Guardar en BD Local
+        await dbManager.saveTablet(tabletData);
+        // 2. Encolar para sync
+        await dbManager.addToSyncQueue('INSERT', 'tablets', tabletData.id, tabletData);
 
-        showToast('Tablet registrada. Sincronizando...', 'success');
+        showToast('Guardado localmente. Subiendo...', 'success');
       }
 
-      // --- PASO CRÍTICO: DISPARAR SYNC INMEDIATO ---
-      // Esto intenta subir los datos a Supabase en ese mismo instante
-      syncManager.triggerInstantSync().catch(e => console.warn('Sync instant failed:', e));
+      // --- 3. DISPARAR SYNC INMEDIATO ---
+      // Esto intenta conectar con Supabase YA MISMO sin esperar al intervalo
+      if (window.syncManager) {
+        syncManager.triggerInstantSync().catch(err => console.warn('Sync background:', err));
+      }
 
-      // Actualizar badge
-      await syncManager.updateSyncBadge();
-
-      // Volver al dashboard
+      // Actualizar vista y volver
+      await this.loadData(); // Recarga datos para ver la nueva tablet en la lista
       this.showView('dashboard');
 
     } catch (error) {
-      console.error('Form submit error:', error);
-      showToast('Error al guardar tablet: ' + error.message, 'error');
+      console.error('Error al guardar:', error);
+      showToast('Error guardando: ' + error.message, 'error');
     }
   }
 
-  // Start camera
-  async startCamera() {
-    try {
-      await cameraManager.start();
-    } catch (error) {
-      console.error('Start camera error:', error);
-    }
-  }
-
-  // Capture photo
-  async capturePhoto() {
-    try {
-      const photoBlob = cameraManager.capturePhoto();
-      
-      cameraManager.stop();
-
-      await this.processOCR(photoBlob);
-
-    } catch (error) {
-      console.error('Capture photo error:', error);
-      showToast('Error al capturar foto: ' + error.message, 'error');
-    }
-  }
-
-  // Handle image upload
-  async handleImageUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    try {
-      await this.processOCR(file);
-    } catch (error) {
-      console.error('Image upload error:', error);
-      showToast('Error al procesar imagen: ' + error.message, 'error');
-    }
-  }
-
-  // Process OCR
+  // --- LÓGICA DE OCR (Conectar con los campos) ---
   async processOCR(imageSource) {
     try {
-      // Show preview
+      // Mostrar preview
       const preview = document.getElementById('ocr-preview');
       const previewImage = document.getElementById('ocr-preview-image');
       
       if (imageSource instanceof Blob || imageSource instanceof File) {
-        const url = URL.createObjectURL(imageSource);
-        previewImage.src = url;
-      } else {
         previewImage.src = URL.createObjectURL(imageSource);
       }
-      
       preview.style.display = 'block';
 
-      // Process with OCR
+      // Procesar
       const extractedInfo = await ocrManager.processImage(imageSource);
 
-      // Populate form fields (no sobrescribir código único automático)
+      // ASIGNAR DATOS A LOS CAMPOS
+      // El OCR Manager ya debe traer la lógica de "nombre = numero_modelo"
+      
       if (extractedInfo.modelo) {
         document.getElementById('modelo').value = extractedInfo.modelo;
       }
@@ -909,66 +222,141 @@ async loadData() {
         document.getElementById('version_android').value = extractedInfo.version_android;
       }
 
-      showToast('Información extraída. Verifica y completa los campos manualmente.', 'success');
+      showToast('Datos extraídos de la imagen', 'success');
 
     } catch (error) {
-      console.error('OCR process error:', error);
-      showToast('Error al procesar OCR. Completa los campos manualmente.', 'warning');
+      console.error('OCR App Error:', error);
+      showToast('Error procesando imagen', 'warning');
     }
   }
 
-  // Handle evidence upload
-  async handleEvidenceUpload(e) {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
+  // --- FUNCIONES AUXILIARES Y UI ---
 
-    const preview = document.getElementById('evidence-preview');
-    
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const img = document.createElement('img');
-        img.src = event.target.result;
-        img.className = 'evidence-thumb';
-        preview.appendChild(img);
-      };
-      reader.readAsDataURL(file);
+  populateForm(tablet) {
+    // Llenar inputs de texto
+    const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if(el) el.value = val || '';
+    };
+
+    setVal('codigo_unico', tablet.codigo_unico);
+    setVal('numero_serie', tablet.numero_serie);
+    setVal('modelo', tablet.modelo);
+    setVal('nombre_producto', tablet.nombre_producto);
+    setVal('numero_modelo', tablet.numero_modelo);
+    setVal('version_android', tablet.version_android);
+    setVal('observaciones', tablet.observaciones);
+    setVal('hallazgos_relevantes', tablet.hallazgos_relevantes);
+    setVal('fecha_mantenimiento', tablet.fecha_mantenimiento);
+
+    // Llenar select de Sede
+    const sedeSelect = document.getElementById('sede_procedencia');
+    if (sedeSelect) {
+        sedeSelect.value = tablet.sede_procedencia || '';
+        // Si el valor no existe en las opciones, intentar seleccionar la opción por defecto o añadirla
+        if (tablet.sede_procedencia && sedeSelect.value === '') {
+             const opt = document.createElement('option');
+             opt.value = tablet.sede_procedencia;
+             opt.text = tablet.sede_procedencia;
+             sedeSelect.add(opt);
+             sedeSelect.value = tablet.sede_procedencia;
+        }
+    }
+
+    // Batería
+    const batVal = tablet.nivel_bateria || 0;
+    document.getElementById('nivel_bateria').value = batVal;
+    document.getElementById('nivel_bateria_slider').value = batVal;
+    document.getElementById('nivel_bateria_display').textContent = batVal + '%';
+
+    // Selects con opción "Otro"
+    setVal('estado_pantalla', tablet.estado_pantalla);
+    const pantallaOtroDiv = document.getElementById('estado_pantalla_otro_group');
+    if (tablet.estado_pantalla === 'Otro') {
+        pantallaOtroDiv.style.display = 'block';
+        setVal('estado_pantalla_otro', tablet.estado_pantalla_otro);
+    } else {
+        pantallaOtroDiv.style.display = 'none';
+    }
+
+    setVal('estado_puerto_carga', tablet.estado_puerto_carga);
+
+    setVal('estado_fisico_general', tablet.estado_fisico_general);
+    const fisicoOtroDiv = document.getElementById('estado_fisico_otro_group');
+    if (tablet.estado_fisico_general === 'Otro') {
+        fisicoOtroDiv.style.display = 'block';
+        setVal('estado_fisico_otro', tablet.estado_fisico_otro);
+    } else {
+        fisicoOtroDiv.style.display = 'none';
+    }
+
+    // Checkboxes
+    document.getElementById('tiene_cargador').checked = !!tablet.tiene_cargador;
+    document.getElementById('tiene_cable').checked = !!tablet.tiene_cable;
+  }
+
+  renderDashboard() {
+    this.updateFilterOptions();
+    this.renderTabletsList();
+  }
+
+  renderTabletsList() {
+    const container = document.getElementById('tablets-list');
+    const emptyState = document.getElementById('empty-state');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    if (this.filteredTablets.length === 0) {
+      if(emptyState) emptyState.style.display = 'flex';
+      return;
+    }
+
+    if(emptyState) emptyState.style.display = 'none';
+
+    this.filteredTablets.forEach(tablet => {
+      container.appendChild(this.createTabletCard(tablet));
     });
   }
 
-  // Handle search
-  handleSearch(query) {
-    this.applyFilters(query);
+  updateFilterOptions() {
+    const sedes = [...new Set(this.tablets.map(t => t.sede_procedencia).filter(Boolean))];
+    const sedeSelect = document.getElementById('filter-sede');
+    if (sedeSelect) {
+      const currentVal = sedeSelect.value;
+      sedeSelect.innerHTML = '<option value="">Todas las sedes</option>';
+      sedes.forEach(sede => {
+        const option = document.createElement('option');
+        option.value = sede;
+        option.textContent = sede;
+        sedeSelect.appendChild(option);
+      });
+      sedeSelect.value = currentVal;
+    }
   }
 
-  // Apply filters
   applyFilters(searchQuery = null) {
     const search = searchQuery || document.getElementById('search-input')?.value || '';
     const sede = document.getElementById('filter-sede')?.value || '';
     const estado = document.getElementById('filter-estado')?.value || '';
 
     this.filteredTablets = this.tablets.filter(tablet => {
-      // Search filter
+      // Filtro Texto
       if (search) {
-        const searchLower = search.toLowerCase();
-        const matchesSearch = 
-          tablet.codigo_unico?.toLowerCase().includes(searchLower) ||
-          tablet.modelo?.toLowerCase().includes(searchLower) ||
-          tablet.numero_serie?.toLowerCase().includes(searchLower) ||
-          tablet.sede_procedencia?.toLowerCase().includes(searchLower);
+        const q = search.toLowerCase();
+        const textMatch = 
+          (tablet.codigo_unico || '').toLowerCase().includes(q) ||
+          (tablet.modelo || '').toLowerCase().includes(q) ||
+          (tablet.numero_serie || '').toLowerCase().includes(q) ||
+          (tablet.sede_procedencia || '').toLowerCase().includes(q) ||
+          (tablet.nombre_producto || '').toLowerCase().includes(q);
         
-        if (!matchesSearch) return false;
+        if (!textMatch) return false;
       }
-
-      // Sede filter
-      if (sede && tablet.sede_procedencia !== sede) {
-        return false;
-      }
-
-      // Estado filter
-      if (estado && tablet.estado_pantalla !== estado) {
-        return false;
-      }
+      // Filtro Sede
+      if (sede && tablet.sede_procedencia !== sede) return false;
+      // Filtro Estado
+      if (estado && tablet.estado_pantalla !== estado) return false;
 
       return true;
     });
@@ -976,220 +364,332 @@ async loadData() {
     this.renderTabletsList();
   }
 
-  // Show export modal
-  showExportModal() {
-    const modal = document.getElementById('export-modal');
-    if (modal) {
-      modal.style.display = 'flex';
-    }
-  }
-
-  // Hide modal
-  hideModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
-      modal.style.display = 'none';
-    }
-  }
-
-  // Export data
-  async exportData(format) {
-    this.hideModal('export-modal');
-
-    exportManager.setData(this.filteredTablets);
-
-    switch (format) {
-      case 'excel':
-        await exportManager.exportToExcel();
-        break;
-      case 'csv':
-        await exportManager.exportToCSV();
-        break;
-      case 'pdf':
-        await exportManager.exportToPDF();
-        break;
-    }
-  }
-
-  // Toggle user menu
-  toggleUserMenu() {
-    const menu = document.getElementById('user-menu');
-    if (menu) {
-      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-    }
-  }
-
-  // Handle logout
-  async handleLogout() {
-    if (!confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-      return;
-    }
-
-    try {
-      await authManager.signOut();
-      window.location.reload();
-    } catch (error) {
-      console.error('Logout error:', error);
-      showToast('Error al cerrar sesión: ' + error.message, 'error');
-    }
-  }
-
-  // Update UI
-  updateUI() {
-    const profile = authManager.getCurrentProfile();
+  // Listeners y Eventos
+  setupEventListeners() {
+    // Navegación
+    const bindClick = (id, fn) => { const el = document.getElementById(id); if(el) el.addEventListener('click', fn); };
     
-    if (profile) {
-      const userName = document.getElementById('user-name');
-      const userRole = document.getElementById('user-role');
-      
-      if (userName) userName.textContent = profile.full_name || profile.email;
-      if (userRole) userRole.textContent = this.getRoleLabel(profile.role);
+    bindClick('back-btn', () => this.showView('dashboard'));
+    bindClick('detail-back-btn', () => this.showView('dashboard'));
+    bindClick('cancel-form-btn', () => this.showView('dashboard'));
+    bindClick('fab', () => { this.currentTablet = null; this.showView('form'); });
 
-      this.updateRoleBasedUI(profile.role);
-    }
-  }
+    // Sync manual
+    bindClick('sync-btn', () => syncManager.manualSync());
 
-  // Update role-based UI
-  updateRoleBasedUI(role) {
-    const elements = document.querySelectorAll('[data-role]');
+    // Exportar
+    bindClick('export-btn', () => this.showExportModal());
+    bindClick('export-excel', () => this.exportData('excel'));
+    bindClick('export-csv', () => this.exportData('csv'));
+    bindClick('export-pdf', () => this.exportData('pdf'));
+
+    // Auth
+    bindClick('user-menu-btn', () => this.toggleUserMenu());
+    bindClick('logout-btn', () => this.handleLogout());
+
+    // Búsqueda y Filtros
+    document.getElementById('search-input')?.addEventListener('input', (e) => this.applyFilters(e.target.value));
+    document.getElementById('filter-sede')?.addEventListener('change', () => this.applyFilters());
+    document.getElementById('filter-estado')?.addEventListener('change', () => this.applyFilters());
+
+    // Formulario Submit
+    document.getElementById('tablet-form')?.addEventListener('submit', (e) => this.handleFormSubmit(e));
+
+    // Cámara y Fotos
+    bindClick('start-camera-btn', () => this.startCamera());
+    bindClick('capture-btn', () => this.capturePhoto());
+    bindClick('upload-image-btn', () => document.getElementById('image-upload-input').click());
+    document.getElementById('image-upload-input')?.addEventListener('change', (e) => this.handleImageUpload(e));
     
-    elements.forEach(element => {
-      const allowedRoles = element.dataset.role.split(',');
-      
-      if (allowedRoles.includes(role)) {
-        element.style.display = '';
-      } else {
-        element.style.display = 'none';
-      }
+    bindClick('add-evidence-btn', () => document.getElementById('evidence-upload-input').click());
+    document.getElementById('evidence-upload-input')?.addEventListener('change', (e) => this.handleEvidenceUpload(e));
+
+    // Sliders Batería
+    const slider = document.getElementById('nivel_bateria_slider');
+    const input = document.getElementById('nivel_bateria');
+    const display = document.getElementById('nivel_bateria_display');
+    if(slider && input) {
+        slider.addEventListener('input', (e) => { input.value = e.target.value; display.textContent = e.target.value + '%'; });
+        input.addEventListener('input', (e) => { slider.value = e.target.value; display.textContent = e.target.value + '%'; });
+    }
+
+    // Mostrar campo "Otro"
+    document.getElementById('estado_pantalla')?.addEventListener('change', (e) => {
+        document.getElementById('estado_pantalla_otro_group').style.display = e.target.value === 'Otro' ? 'block' : 'none';
+    });
+    document.getElementById('estado_fisico_general')?.addEventListener('change', (e) => {
+        document.getElementById('estado_fisico_otro_group').style.display = e.target.value === 'Otro' ? 'block' : 'none';
+    });
+
+    // Modales
+    document.querySelectorAll('.btn-close').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+             const m = document.getElementById(e.target.dataset.modal);
+             if(m) m.style.display = 'none';
+        });
     });
   }
 
-  // Get role label
-  getRoleLabel(role) {
-    const labels = {
-      'admin': 'Administrador',
-      'tecnico': 'Técnico',
-      'consulta': 'Solo Consulta'
-    };
-    return labels[role] || role;
-  }
-
-  // Hide splash screen
-  hideSplashScreen() {
-    const splash = document.getElementById('splash-screen');
-    if (splash) {
-      setTimeout(() => {
-        splash.style.opacity = '0';
-        setTimeout(() => {
-          splash.style.display = 'none';
-        }, 300);
-      }, 500);
+  // --- VISTAS Y NAVEGACIÓN ---
+  showView(viewName) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    const view = document.getElementById(`${viewName}-view`);
+    if (view) {
+      view.classList.add('active');
+      this.currentView = viewName;
+      if (viewName === 'dashboard') this.renderDashboard();
+      if (viewName === 'form') this.renderForm();
     }
   }
 
-  // Show app
-  showApp() {
-    const app = document.getElementById('app');
-    if (app) {
-      app.style.display = 'block';
+  renderForm() {
+    const formTitle = document.getElementById('form-title');
+    const form = document.getElementById('tablet-form');
+    const codigoInput = document.getElementById('codigo_unico');
+
+    if (this.currentTablet) {
+      formTitle.textContent = 'Editar Tablet';
+      this.populateForm(this.currentTablet);
+      if (authManager.isAdmin()) {
+        codigoInput.readOnly = false;
+        codigoInput.style.backgroundColor = '#fff';
+      } else {
+        codigoInput.readOnly = true;
+        codigoInput.style.backgroundColor = '#f3f4f6';
+      }
+    } else {
+      formTitle.textContent = 'Agregar Tablet';
+      form.reset();
+      codigoInput.value = this.generateTabletCode();
+      codigoInput.readOnly = true;
+      codigoInput.style.backgroundColor = '#f3f4f6';
+      document.getElementById('fecha_mantenimiento').value = new Date().toISOString().split('T')[0];
+      
+      // Ocultar campos "otro"
+      document.getElementById('estado_pantalla_otro_group').style.display = 'none';
+      document.getElementById('estado_fisico_otro_group').style.display = 'none';
     }
   }
 
-  // Utility: Generate UUID Safe
-  generateUUID() {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-      return crypto.randomUUID();
-    }
-    return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c =>
-      (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
-    );
-  }
-
-  // Utility: Generate Tablet Code
-  generateTabletCode() {
-    // Formato: TAB-YYYYMMDD-XXXX (TAB-20251209-0001)
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const dateStr = `${year}${month}${day}`;
-    
-    // Generar 4 dígitos aleatorios criptográficamente seguros
-    const array = new Uint32Array(1);
-    self.crypto.getRandomValues(array);
-    const random = String(array[0] % 10000).padStart(4, '0');
-    
-    return `TAB-${dateStr}-${random}`;
-  }
-
-  // Format date
-  formatDate(dateString) {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('es-GT');
-  }
-
-  // Format datetime
-  formatDateTime(dateString) {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleString('es-GT');
-  }
-}
-
-// Toast notification helper
-function showToast(message, type = 'info') {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.textContent = message;
-
-  container.appendChild(toast);
-
-  setTimeout(() => toast.classList.add('show'), 10);
-
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
-}
-
-// Initialize app when DOM is ready
-(function() {
-  console.log('=== SCRIPT APP.JS CARGADO ===');
-  console.log('DOM readyState:', document.readyState);
-
-  function startApp() {
-    console.log('=== INICIANDO CREACIÓN DE APP ===');
+  // --- DETALLES ---
+  async showTabletDetail(tabletId) {
     try {
-      window.app = new TabletInventoryApp();
-      console.log('✓ Instancia de app creada');
-      window.app.init();
-    } catch (error) {
-      console.error('❌ Error al iniciar app:', error);
-      console.error('Stack completo:', error.stack);
+      const tablet = await dbManager.getTablet(tabletId);
+      if (!tablet) { showToast('No encontrada', 'error'); return; }
+
+      this.currentTablet = tablet;
+      const content = document.getElementById('tablet-detail-content');
       
-      const splash = document.getElementById('splash-screen');
-      if (splash) splash.style.display = 'none';
+      if (content) {
+        content.innerHTML = `
+          <div class="detail-section">
+            <h3>${tablet.nombre_producto || 'Tablet'}</h3>
+            <div class="detail-grid">
+               <div class="detail-item"><label>Serie</label><p>${tablet.numero_serie || '-'}</p></div>
+               <div class="detail-item"><label>Código</label><p>${tablet.codigo_unico}</p></div>
+               <div class="detail-item"><label>Sede</label><p>${tablet.sede_procedencia || '-'}</p></div>
+               <div class="detail-item"><label>Modelo</label><p>${tablet.modelo || '-'}</p></div>
+               <div class="detail-item"><label>Android</label><p>${tablet.version_android || '-'}</p></div>
+               <div class="detail-item"><label>Batería</label><p>${tablet.nivel_bateria}%</p></div>
+            </div>
+            <div style="margin-top: 10px;">
+               <p><strong>Estado Pantalla:</strong> ${tablet.estado_pantalla}</p>
+               <p><strong>Estado Físico:</strong> ${tablet.estado_fisico_general}</p>
+               <p><strong>Cargador:</strong> ${tablet.tiene_cargador ? 'Sí' : 'No'} | <strong>Cable:</strong> ${tablet.tiene_cable ? 'Sí' : 'No'}</p>
+            </div>
+          </div>
+        `;
+      }
       
-      document.body.innerHTML = `
-        <div style="padding: 20px; text-align: center; font-family: Arial;">
-          <h2 style="color: red;">Error al iniciar la aplicación</h2>
-          <p><strong>${error.message}</strong></p>
-          <pre style="text-align: left; background: #f5f5f5; padding: 10px; border-radius: 5px; overflow: auto; max-height: 300px;">${error.stack}</pre>
-          <button onclick="location.reload()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px;">
-            Recargar página
-          </button>
-        </div>
-      `;
+      // Botones editar/borrar
+      const editBtn = document.getElementById('edit-tablet-btn');
+      if(editBtn) {
+         editBtn.onclick = () => this.editTablet(tablet.id);
+         editBtn.style.display = authManager.canEdit() ? 'block' : 'none';
+      }
+      
+      const delBtn = document.getElementById('delete-tablet-btn');
+      if(delBtn) {
+         delBtn.onclick = () => this.deleteTablet(tablet.id);
+         delBtn.style.display = authManager.isAdmin() ? 'block' : 'none';
+      }
+
+      this.showView('detail');
+    } catch (e) { console.error(e); }
+  }
+
+  async editTablet(id) {
+      const t = await dbManager.getTablet(id);
+      if(t) { this.currentTablet = t; this.showView('form'); }
+  }
+
+  async deleteTablet(id) {
+      if(!confirm('¿Eliminar esta tablet permanentemente?')) return;
+      await dbManager.deleteTablet(id);
+      await dbManager.addToSyncQueue('DELETE', 'tablets', id, null);
+      syncManager.triggerInstantSync();
+      showToast('Eliminada', 'success');
+      this.showView('dashboard');
+  }
+
+  // --- UTILS ---
+  generateUUID() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
+
+  generateTabletCode() {
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+    const rand = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+    return `TAB-${dateStr}-${rand}`;
+  }
+
+  formatDate(d) {
+    if (!d) return '-';
+    return new Date(d).toLocaleDateString('es-GT');
+  }
+
+  getStatusClass(estado) {
+    if (['Bueno', 'Funcional', 'Excelente'].includes(estado)) return 'status-good';
+    if (['Regular', 'Con rayones'].includes(estado)) return 'status-warning';
+    return 'status-danger';
+  }
+
+  updateStatistics() {
+    dbManager.getStats().then(stats => {
+       if(document.getElementById('stat-total')) document.getElementById('stat-total').textContent = stats.total;
+       if(document.getElementById('stat-good')) document.getElementById('stat-good').textContent = stats.good;
+       if(document.getElementById('stat-attention')) document.getElementById('stat-attention').textContent = stats.attention;
+       if(document.getElementById('stat-pending')) document.getElementById('stat-pending').textContent = stats.pending;
+    });
+  }
+
+  // --- GESTIÓN DE CÁMARA E IMÁGENES ---
+  startCamera() { cameraManager.start().catch(e => console.error(e)); }
+  
+  capturePhoto() { 
+      const blob = cameraManager.capturePhoto();
+      cameraManager.stop();
+      this.processOCR(blob);
+  }
+
+  handleImageUpload(e) {
+      const file = e.target.files[0];
+      if(file) this.processOCR(file);
+  }
+
+  handleEvidenceUpload(e) {
+      const files = Array.from(e.target.files);
+      const preview = document.getElementById('evidence-preview');
+      files.forEach(file => {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+              const img = document.createElement('img');
+              img.src = ev.target.result;
+              img.className = 'evidence-thumb';
+              preview.appendChild(img);
+          };
+          reader.readAsDataURL(file);
+      });
+  }
+
+  // --- UI GENERAL ---
+  toggleUserMenu() {
+    const m = document.getElementById('user-menu');
+    if(m) m.style.display = m.style.display === 'none' ? 'block' : 'none';
+  }
+
+  async handleLogout() {
+    if(confirm('¿Cerrar sesión?')) {
+        await authManager.signOut();
+        location.reload();
     }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startApp);
-  } else {
-    startApp();
+  showLoginPage() {
+     const splash = document.getElementById('splash-screen');
+     if(splash) splash.style.display = 'none';
+     
+     if (document.getElementById('login-container')) return;
+
+     document.body.innerHTML += `
+      <div id="login-container" class="login-container">
+        <div class="login-card">
+          <h1>Inventario Tablets</h1>
+          <form id="login-form">
+            <div class="form-group"><label>Email</label><input type="email" id="login-email" required></div>
+            <div class="form-group"><label>Password</label><input type="password" id="login-password" required></div>
+            <button type="submit" class="btn-primary btn-block">Ingresar</button>
+          </form>
+          <div id="login-error" style="color:red; display:none;"></div>
+        </div>
+      </div>`;
+
+     document.getElementById('login-form').addEventListener('submit', async (e) => {
+         e.preventDefault();
+         try {
+             await authManager.signIn(document.getElementById('login-email').value, document.getElementById('login-password').value);
+             location.reload();
+         } catch(err) {
+             const d = document.getElementById('login-error');
+             d.textContent = err.message; d.style.display = 'block';
+         }
+     });
   }
+
+  showApp() { document.getElementById('app').style.display = 'block'; }
+  
+  hideSplashScreen() {
+    const s = document.getElementById('splash-screen');
+    if(s) { s.style.opacity = '0'; setTimeout(() => s.style.display = 'none', 300); }
+  }
+
+  forceHideSplashAfterTimeout() {
+      setTimeout(() => { if(document.getElementById('splash-screen').style.display !== 'none') this.hideSplashScreen(); }, 8000);
+  }
+
+  updateUI() {
+      const p = authManager.getCurrentProfile();
+      if(p) {
+          const u = document.getElementById('user-name');
+          if(u) u.textContent = p.full_name || p.email;
+          const r = document.getElementById('user-role');
+          if(r) r.textContent = p.role;
+          
+          // Ocultar elementos según rol
+          document.querySelectorAll('[data-role]').forEach(el => {
+              const roles = el.dataset.role.split(',');
+              el.style.display = roles.includes(p.role) ? '' : 'none';
+          });
+      }
+  }
+
+  showExportModal() { document.getElementById('export-modal').style.display = 'flex'; }
+  hideModal(id) { document.getElementById(id).style.display = 'none'; }
+  async exportData(fmt) {
+      this.hideModal('export-modal');
+      exportManager.setData(this.filteredTablets);
+      if(fmt === 'excel') await exportManager.exportToExcel();
+      if(fmt === 'csv') await exportManager.exportToCSV();
+      if(fmt === 'pdf') await exportManager.exportToPDF();
+  }
+
+  async registerServiceWorker() {
+      if ('serviceWorker' in navigator) {
+          try {
+             const path = location.hostname === 'localhost' ? '/sw.js' : './sw.js';
+             await navigator.serviceWorker.register(path);
+          } catch (e) { console.log('SW fail:', e); }
+      }
+  }
+}
+
+// INICIO AUTOMÁTICO
+(function() {
+  const start = () => { window.app = new TabletInventoryApp(); window.app.init(); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();
