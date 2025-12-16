@@ -118,19 +118,9 @@ class TabletInventoryApp {
         // Si hay error, mostrar mensaje
         const appElement = document.getElementById('app');
         if (!appElement || !appElement.style.display || appElement.style.display === 'none') {
-          document.body.innerHTML = `
-            <div style="padding: 20px; text-align: center; font-family: Arial;">
-              <h2>La aplicación tardó demasiado en cargar</h2>
-              <p>Revisa la consola (F12) para ver los errores.</p>
-              <button onclick="location.reload()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px;">
-                Recargar página
-              </button>
-              <button onclick="localStorage.clear(); indexedDB.deleteDatabase('TabletInventoryDB'); location.reload()" 
-                      style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px; background: red; color: white; border: none;">
-                Limpiar todo y recargar
-              </button>
-            </div>
-          `;
+          // Solo mostrar mensaje si no se ha cargado la app
+          /* document.body.innerHTML = `...`; 
+          */
         }
       }
     }, 10000); // 10 segundos
@@ -140,7 +130,8 @@ class TabletInventoryApp {
   async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
-        const swPath = window.location.hostname === 'localhost' ? '/sw.js' : '/inventarioATT/sw.js';
+        // CORREGIDO: Detección dinámica de ruta
+        const swPath = window.location.hostname === 'localhost' ? '/sw.js' : './sw.js';
         const registration = await navigator.serviceWorker.register(swPath);
         console.log('Service Worker registered:', registration);
 
@@ -168,10 +159,13 @@ class TabletInventoryApp {
     if (splashScreen) splashScreen.style.display = 'none';
     if (app) app.style.display = 'none';
 
+    // Evitar duplicar formulario si ya existe
+    if (document.getElementById('login-container')) return;
+
     document.body.innerHTML += `
       <div id="login-container" class="login-container">
         <div class="login-card">
-          <img src="https://via.placeholder.com/80x80/2563eb/ffffff?text=IT" alt="Logo" class="login-logo">
+          <div class="login-logo" style="font-size: 40px;">📱</div>
           <h1>Inventario de Tablets</h1>
           <p class="login-subtitle">Fundación Carlos F. Novella</p>
           
@@ -227,22 +221,23 @@ class TabletInventoryApp {
   }
 
   // Load data from IndexedDB
-// En js/app.js, reemplaza loadData
   async loadData() {
     try {
       this.tablets = await dbManager.getAllTablets();
       this.filteredTablets = [...this.tablets];
-      console.log(`[App] ${this.tablets.length} tablets cargadas.`);
-      
-      // Sincronización silenciosa si hay red
+
+      console.log(`Loaded ${this.tablets.length} tablets from local storage`);
+
+      // Intento de sync en background si hay conexión
       if (navigator.onLine && supabaseClient.isAvailable()) {
-        setTimeout(() => syncManager.syncAll().catch(e => console.warn('Sync background error:', e)), 3000);
+        syncManager.triggerInstantSync().catch(err => {
+          console.warn('Background sync warning:', err);
+        });
       }
+
     } catch (error) {
-      console.error('❌ Error fatal cargando datos:', error);
-      showToast('Error cargando base de datos local. Intentando recuperar...', 'error');
-      // Intento de emergencia: reiniciar vista
-      this.filteredTablets = [];
+      console.error('Load data error:', error);
+      showToast('Error cargando datos. Intentando recuperar...', 'error');
     }
   }
 
@@ -676,16 +671,11 @@ class TabletInventoryApp {
     try {
       await dbManager.deleteTablet(tabletId);
 
-      if (navigator.onLine && supabaseClient.isAvailable()) {
-        try {
-          await supabaseClient.deleteTablet(tabletId);
-        } catch (error) {
-          console.error('Error deleting from server:', error);
-          await dbManager.addToSyncQueue('DELETE', 'tablets', tabletId, null);
-        }
-      } else {
-        await dbManager.addToSyncQueue('DELETE', 'tablets', tabletId, null);
-      }
+      // Cola de borrado
+      await dbManager.addToSyncQueue('DELETE', 'tablets', tabletId, null);
+      
+      // Intentar sync inmediato
+      syncManager.triggerInstantSync().catch(e => console.log('Sync delete:', e));
 
       showToast('Tablet eliminada exitosamente', 'success');
       this.showView('dashboard');
@@ -772,7 +762,7 @@ class TabletInventoryApp {
     document.getElementById('fecha_mantenimiento').value = tablet.fecha_mantenimiento || '';
   }
 
-  // Handle form submit
+  // MEJORADO: Handle form submit con Sincronización Inmediata
   async handleFormSubmit(e) {
     e.preventDefault();
 
@@ -797,103 +787,53 @@ class TabletInventoryApp {
         observaciones: formData.get('observaciones') || null,
         hallazgos_relevantes: formData.get('hallazgos_relevantes') || null,
         fecha_mantenimiento: formData.get('fecha_mantenimiento'),
-        synced: false
+        synced: false // Siempre empieza como no sincronizado
       };
 
       if (this.currentTablet) {
-        // Update existing tablet
+        // --- EDICIÓN ---
         tabletData.id = this.currentTablet.id;
-        await dbManager.saveTablet(tabletData);
-
-        // If online, update on server
-        if (navigator.onLine && supabaseClient.isAvailable()) {
-          try {
-            const serverTablet = await supabaseClient.updateTablet(tabletData.id, tabletData);
-            // Marcar como sincronizado después de éxito
-            tabletData.synced = true;
-            tabletData.last_synced_at = new Date().toISOString();
-            await dbManager.saveTablet(tabletData);
-          } catch (error) {
-            console.error('Error updating on server:', error);
-            await dbManager.addToSyncQueue('UPDATE', 'tablets', tabletData.id, tabletData);
-          }
-        } else {
-          // Add to sync queue
-          await dbManager.addToSyncQueue('UPDATE', 'tablets', tabletData.id, tabletData);
-        }
-
-        showToast('Tablet actualizada exitosamente', 'success');
-      } else {
-        // Create new tablet
-        tabletData.id = this.generateUUID();
         
-        // Verificar si ya existe localmente antes de guardar
+        // 1. Guardar localmente
+        await dbManager.saveTablet(tabletData);
+        
+        // 2. Encolar actualización
+        await dbManager.addToSyncQueue('UPDATE', 'tablets', tabletData.id, tabletData);
+
+        showToast('Tablet guardada localmente', 'success');
+      } else {
+        // --- CREACIÓN ---
+        tabletData.id = this.generateUUID(); // ID seguro
+        
+        // Validar duplicado local
         const existingLocal = await dbManager.searchTablets(tabletData.codigo_unico);
         if (existingLocal.length > 0) {
           const useExisting = confirm('Ya existe una tablet con este código. ¿Deseas actualizarla?');
           if (useExisting) {
             tabletData.id = existingLocal[0].id;
             await dbManager.saveTablet(tabletData);
+            await dbManager.addToSyncQueue('UPDATE', 'tablets', tabletData.id, tabletData);
           } else {
-            showToast('Operación cancelada', 'info');
             return;
           }
         } else {
+          // 1. Guardar localmente
           await dbManager.saveTablet(tabletData);
-        }
-
-        // If online, create on server
-        if (navigator.onLine && supabaseClient.isAvailable()) {
-          try {
-            const serverTablet = await supabaseClient.createTablet(tabletData);
-            // Usar el ID del servidor y marcar como sincronizado
-            tabletData.id = serverTablet.id;
-            tabletData.synced = true;
-            tabletData.last_synced_at = new Date().toISOString();
-            await dbManager.saveTablet(tabletData);
-          } catch (error) {
-            console.error('Error creating on server:', error);
-            
-            // Si es duplicado, intentar encontrar y actualizar
-            if (error.code === '23505') {
-              console.log('Duplicate detected, searching for existing tablet...');
-              try {
-                const tablets = await supabaseClient.getTablets({ search: tabletData.codigo_unico });
-                const existing = tablets.find(t => 
-                  t.codigo_unico === tabletData.codigo_unico || 
-                  t.numero_serie === tabletData.numero_serie
-                );
-                
-                if (existing) {
-                  await supabaseClient.updateTablet(existing.id, tabletData);
-                  tabletData.id = existing.id;
-                  tabletData.synced = true;
-                  tabletData.last_synced_at = new Date().toISOString();
-                  await dbManager.saveTablet(tabletData);
-                  showToast('Tablet existente actualizada', 'info');
-                } else {
-                  await dbManager.addToSyncQueue('INSERT', 'tablets', tabletData.id, tabletData);
-                }
-              } catch (retryError) {
-                console.error('Error recovering from duplicate:', retryError);
-                await dbManager.addToSyncQueue('INSERT', 'tablets', tabletData.id, tabletData);
-              }
-            } else {
-              await dbManager.addToSyncQueue('INSERT', 'tablets', tabletData.id, tabletData);
-            }
-          }
-        } else {
-          // Add to sync queue
+          // 2. Encolar inserción
           await dbManager.addToSyncQueue('INSERT', 'tablets', tabletData.id, tabletData);
         }
 
-        showToast('Tablet registrada exitosamente', 'success');
+        showToast('Tablet registrada. Sincronizando...', 'success');
       }
 
-      // Update sync badge
+      // --- PASO CRÍTICO: DISPARAR SYNC INMEDIATO ---
+      // Esto intenta subir los datos a Supabase en ese mismo instante
+      syncManager.triggerInstantSync().catch(e => console.warn('Sync instant failed:', e));
+
+      // Actualizar badge
       await syncManager.updateSyncBadge();
 
-      // Go back to dashboard
+      // Volver al dashboard
       this.showView('dashboard');
 
     } catch (error) {
@@ -1161,30 +1101,14 @@ class TabletInventoryApp {
     }
   }
 
-  // Utility: Generate UUID
-// En js/app.js, reemplaza el método generateUUID
+  // Utility: Generate UUID Safe
   generateUUID() {
-    // Uso nativo de crypto para IDs únicos reales y seguros
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return crypto.randomUUID();
     }
-    // Fallback seguro si randomUUID no existe (navegadores viejos)
     return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c =>
       (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
     );
-  }
-
-  // Reemplaza generateTabletCode
-  generateTabletCode() {
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, ''); // 20231201
-    
-    // Generar 4 dígitos aleatorios criptográficamente seguros
-    const array = new Uint32Array(1);
-    self.crypto.getRandomValues(array);
-    const random = String(array[0] % 10000).padStart(4, '0');
-    
-    return `TAB-${dateStr}-${random}`;
   }
 
   // Utility: Generate Tablet Code
@@ -1196,8 +1120,10 @@ class TabletInventoryApp {
     const day = String(now.getDate()).padStart(2, '0');
     const dateStr = `${year}${month}${day}`;
     
-    // Generar un número aleatorio de 4 dígitos
-    const random = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+    // Generar 4 dígitos aleatorios criptográficamente seguros
+    const array = new Uint32Array(1);
+    self.crypto.getRandomValues(array);
+    const random = String(array[0] % 10000).padStart(4, '0');
     
     return `TAB-${dateStr}-${random}`;
   }
@@ -1251,7 +1177,6 @@ function showToast(message, type = 'info') {
       console.error('❌ Error al iniciar app:', error);
       console.error('Stack completo:', error.stack);
       
-      // Mostrar error en pantalla
       const splash = document.getElementById('splash-screen');
       if (splash) splash.style.display = 'none';
       
@@ -1263,21 +1188,14 @@ function showToast(message, type = 'info') {
           <button onclick="location.reload()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px;">
             Recargar página
           </button>
-          <button onclick="localStorage.clear(); indexedDB.deleteDatabase('TabletInventoryDB'); location.reload()" 
-                  style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px; background: red; color: white; border: none;">
-            Limpiar todo y recargar
-          </button>
         </div>
       `;
     }
   }
 
-  // Esperar a que el DOM esté listo
   if (document.readyState === 'loading') {
-    console.log('DOM aún cargando, esperando DOMContentLoaded...');
     document.addEventListener('DOMContentLoaded', startApp);
   } else {
-    console.log('DOM ya está listo, iniciando inmediatamente...');
     startApp();
   }
 })();
