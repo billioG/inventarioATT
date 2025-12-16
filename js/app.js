@@ -227,22 +227,22 @@ class TabletInventoryApp {
   }
 
   // Load data from IndexedDB
+// En js/app.js, reemplaza loadData
   async loadData() {
     try {
       this.tablets = await dbManager.getAllTablets();
       this.filteredTablets = [...this.tablets];
-
-      console.log(`Loaded ${this.tablets.length} tablets from local storage`);
-
+      console.log(`[App] ${this.tablets.length} tablets cargadas.`);
+      
+      // Sincronización silenciosa si hay red
       if (navigator.onLine && supabaseClient.isAvailable()) {
-        syncManager.syncAll().catch(err => {
-          console.error('Background sync error:', err);
-        });
+        setTimeout(() => syncManager.syncAll().catch(e => console.warn('Sync background error:', e)), 3000);
       }
-
     } catch (error) {
-      console.error('Load data error:', error);
-      throw error;
+      console.error('❌ Error fatal cargando datos:', error);
+      showToast('Error cargando base de datos local. Intentando recuperar...', 'error');
+      // Intento de emergencia: reiniciar vista
+      this.filteredTablets = [];
     }
   }
 
@@ -1162,12 +1162,29 @@ class TabletInventoryApp {
   }
 
   // Utility: Generate UUID
+// En js/app.js, reemplaza el método generateUUID
   generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
+    // Uso nativo de crypto para IDs únicos reales y seguros
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    // Fallback seguro si randomUUID no existe (navegadores viejos)
+    return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c =>
+      (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+    );
+  }
+
+  // Reemplaza generateTabletCode
+  generateTabletCode() {
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, ''); // 20231201
+    
+    // Generar 4 dígitos aleatorios criptográficamente seguros
+    const array = new Uint32Array(1);
+    self.crypto.getRandomValues(array);
+    const random = String(array[0] % 10000).padStart(4, '0');
+    
+    return `TAB-${dateStr}-${random}`;
   }
 
   // Utility: Generate Tablet Code
